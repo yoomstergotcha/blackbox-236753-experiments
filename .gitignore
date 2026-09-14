@@ -1,0 +1,24 @@
+# 가상환경 / 캐시
+.venv/
+__pycache__/
+*.pyc
+
+# 외부에서 받은 대용량 원본 데이터 (재다운로드 가능 - dataset_registry.csv에 출처 기록)
+data/external/comma2k19_chunks/
+data/external/comma2k19_chunk1_subset/
+data/external/comma2k19_demo64/
+
+# 학습으로 재생성 가능한 산출물 (모델 체크포인트, 제출 zip, 스크래치 출력)
+model/
+submit.zip
+output/
+sample_evaluation_data/
+inference.py
+.tools/
+
+# 대회 공식 공개 샘플 영상 / comma2k19 실측 영상 (용량이 커서 git에는 안 올림 -
+# DACON 대회 페이지, dataset_registry.csv 출처에서 재획득 가능. CSV/설정/코드는 유지)
+data/stage1/**/*.mp4
+data/stage2/**/*.mp4
+data/stage3/**/*.mp4
+data/external/comma2k19_example/segment/video.hevc

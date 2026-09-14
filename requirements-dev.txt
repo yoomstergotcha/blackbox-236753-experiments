@@ -1,0 +1,7 @@
+# 로컬 검증/실험용 (submit.zip에는 포함하지 않음 — requirements.txt만 제출용).
+# src/eval, src/data/comma2k19 파이프라인을 로컬에서 돌리는 데 필요한 패키지.
+numpy==2.5.3
+pandas==3.0.5
+opencv-python-headless==5.0.0.93
+PyYAML==6.0.3
+pyarrow==17.0.0
