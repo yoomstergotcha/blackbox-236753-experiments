@@ -26,9 +26,13 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from src.data.comma2k19.split import assert_no_route_leakage, group_train_val_split, route_id
+from src.eval.metrics import macro_f1
 
 from .stage3_dataset import ACCEL_TO_IDX, STEER_TO_IDX, MultiSegmentStage3Dataset
 from .stage3_model import Stage3MViT
+from .stage3_model_light import Stage3ResNetHead
+
+MODELS = {"mvit": Stage3MViT, "resnet": Stage3ResNetHead}
 
 
 def main() -> None:
@@ -36,6 +40,7 @@ def main() -> None:
     parser.add_argument("--labels", type=Path, required=True)
     parser.add_argument("--video-paths", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--model", choices=sorted(MODELS), default="mvit")
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--lr", type=float, default=1e-4)
@@ -79,10 +84,16 @@ def main() -> None:
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=0)
     val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
-    model = Stage3MViT().to(device)
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    model = MODELS[args.model]().to(device)
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    n_trainable = sum(p.numel() for p in trainable)
+    n_total = sum(p.numel() for p in model.parameters())
+    print(f"model={args.model} trainable_params={n_trainable:,} / total_params={n_total:,}")
+    opt = torch.optim.AdamW(trainable, lr=args.lr)
 
     history = []
+    best_score = -1.0
+    best_epoch = -1
     for epoch in range(args.epochs):
         model.train()
         t0 = time.time()
@@ -127,12 +138,28 @@ def main() -> None:
 
         accel_acc = sum(t == p for t, p in zip(accel_true, accel_pred)) / len(accel_true)
         steer_acc = sum(t == p for t, p in zip(steer_true, steer_pred)) / len(steer_true)
+
+        # 실제 대회 채점 지표(macro-F1)로도 계산한다 - accuracy는 majority-class collapse를
+        # 못 걸러내는 오도된 지표였다(STRAIGHT 100% 예측이 accuracy=0.658을 냄).
+        # ACCEL_TO_IDX/STEER_TO_IDX 순서 = src.eval.metrics의 STAGE3_*_LABELS 순서와 동일하므로
+        # 정수 인덱스를 label로 그대로 써도 된다.
+        accel_f1 = macro_f1(accel_true, accel_pred, list(range(4)))
+        stopped_idx = ACCEL_TO_IDX["STOPPED"]
+        steer_mask = [t != stopped_idx for t in accel_true]
+        steer_true_scored = [s for s, m in zip(steer_true, steer_mask) if m]
+        steer_pred_scored = [s for s, m in zip(steer_pred, steer_mask) if m]
+        steer_f1 = macro_f1(steer_true_scored, steer_pred_scored, list(range(3))) if steer_true_scored else 0.0
+        stage3_score = 0.7 * accel_f1 + 0.3 * steer_f1
+
         record = {
             "epoch": epoch,
             "train_loss": train_loss,
             "val_loss": val_loss,
             "val_accel_acc": accel_acc,
             "val_steer_acc": steer_acc,
+            "val_accel_macro_f1": accel_f1,
+            "val_steer_macro_f1": steer_f1,
+            "val_stage3_score": stage3_score,
             "val_accel_pred_dist": dict(Counter(accel_pred)),
             "val_steer_pred_dist": dict(Counter(steer_pred)),
             "elapsed_sec": time.time() - t0,
@@ -140,15 +167,21 @@ def main() -> None:
         history.append(record)
         print(record)
 
+        if stage3_score > best_score:
+            best_score = stage3_score
+            best_epoch = epoch
+            torch.save(model.state_dict(), args.out / "best.pt")
+
     if device.type == "cuda":
         peak_vram_gb = torch.cuda.max_memory_allocated() / 1024**3
         print(f"peak VRAM: {peak_vram_gb:.2f} GB")
         history.append({"peak_vram_gb": peak_vram_gb})
 
-    torch.save(model.state_dict(), args.out / "model.pt")
+    torch.save(model.state_dict(), args.out / "final.pt")
     with open(args.out / "history.json", "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
-    print(f"\n체크포인트: {args.out / 'model.pt'}")
+    print(f"\n최종 epoch 체크포인트: {args.out / 'final.pt'}")
+    print(f"최고 val_stage3_score={best_score:.4f} (epoch {best_epoch}) 체크포인트: {args.out / 'best.pt'}")
 
 
 if __name__ == "__main__":

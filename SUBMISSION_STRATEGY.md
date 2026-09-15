@@ -51,11 +51,14 @@ Stage3 = 0.7×accel_macroF1 + 0.3×steer_macroF1
 - 목적: LB 점수 확인 + 평가서버 install/runtime 호환성 확인(이후 모든 실험의 기준선).
 - **사용자 액션 필요**: dacon.io에 이 zip 업로드.
 
-### Day 1~2 — 제출 2: Stage3만 comma2k19 모델로 교체
+### 제출 2: Stage3만 comma2k19 모델로 교체 — **완료, 제출 대기 중**
 
-- 필요 작업(진행 중): `EXP-S3-BASE-002` 학습 완료 → 공식 `predict_stage3(data_dir, model_dir)` 인터페이스에 맞는 wrapper 작성(comma2k19 폴더 구조가 아니라 임의의 `data_dir/videos/*.mp4`를 받아야 함) → 로컬 smoke-test로 baseline과 비교.
-- Stage1/2는 baseline 그대로 유지 — LB 델타가 순수하게 Stage3 변경분이 되도록.
-- **예상 리스크**: 도메인 시프트로 기대보다 개선이 적거나 오히려 나쁠 수 있음 — 그래도 시도할 가치 있음(현재 baseline이 collapse 상태라 하한이 낮음).
+- `EXP-S3-BASE-002/003`(MViT scratch, lr 1e-4·2e-5)은 둘 다 majority-class collapse — 진단 후 아키텍처를 ImageNet-pretrained ResNet18(frozen)+작은 head로 교체(`EXP-S3-BASE-004/005`).
+- `EXP-S3-BASE-005`(15 epoch, val_stage3_score 기준 best checkpoint 자동 저장) → 공식 `predict_stage3(data_dir, model_dir)` 인터페이스 wrapper 작성(`src/train/predict_stage3_comma2k19.py`, comma2k19 폴더 구조가 아니라 `data_dir/videos/*.mp4` 임의 입력을 받음).
+- **실제 official Stage3 라벨(50행, comma2k19와 무관한 도메인)로 baseline과 직접 비교**: baseline `stage3_score=0.140` → candidate2 `stage3_score=0.409` (약 3배). Stage1/2는 baseline과 100% 동일.
+- `submit_v2.zip`(203MB) 생성·로컬 smoke-test 통과 완료 — `build_submission_v2.py`.
+- **도메인 시프트 리스크는 우려보다 작았다** — comma2k19(정상 주행)로 학습했지만 official 사고영상 라벨에서도 개선을 보임. N=50이라 확정적이진 않지만 방향은 뚜렷함.
+- **사용자 액션 필요**: `submit_v2.zip`을 dacon.io에 업로드 (제출 1과 별도 슬롯 — 오늘 3회 중 아직 안 씀).
 
 ### Day 2~3 — 제출 3: + Stage1 synthetic augmentation
 
