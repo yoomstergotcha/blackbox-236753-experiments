@@ -34,6 +34,20 @@ from .stage3_model_light import Stage3ResNetHead
 CLIP = 16
 
 
+def clip_features_temporal(feats: np.ndarray, frame_idx: np.ndarray, n_frames: int = CLIP) -> np.ndarray:
+    """EXP-S3-TEMP-001: 16프레임을 앞 8/뒤 8로 나눠 각각 평균한 뒤 concat(1024-d).
+    가감속은 시간 순서 정보인데 전체 평균은 순서를 버린다 — 앞/뒤 반윈도 차이가 속도 변화의 단서."""
+    n = len(feats)
+    out = np.empty((len(frame_idx), feats.shape[1] * 2), dtype=np.float32)
+    f32 = feats.astype(np.float32)
+    h = n_frames // 2
+    for k, i in enumerate(frame_idx):
+        idx = np.clip(int(i) - h + np.arange(n_frames), 0, n - 1)
+        out[k, : feats.shape[1]] = f32[idx[:h]].mean(0)
+        out[k, feats.shape[1] :] = f32[idx[h:]].mean(0)
+    return out
+
+
 def clip_features(feats: np.ndarray, frame_idx: np.ndarray, n_frames: int = CLIP) -> np.ndarray:
     """feats: (N, 512). 각 frame_idx에 대해 [i-8, i+8) 구간(경계는 clip) 평균 — MultiSegmentStage3Dataset의
     클립 구성(np.clip(i-8+arange(16), 0, N-1))과 정확히 같은 프레임 집합의 평균."""
@@ -46,11 +60,12 @@ def clip_features(feats: np.ndarray, frame_idx: np.ndarray, n_frames: int = CLIP
     return out
 
 
-def build_xy(labels: pd.DataFrame, feat_dir: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def build_xy(labels: pd.DataFrame, feat_dir: Path, temporal: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     xs, ya, ys = [], [], []
+    fn = clip_features_temporal if temporal else clip_features
     for sid, g in labels.groupby("segment_id", sort=False):
         f = np.load(feat_dir / (sid.replace("/", "__") + ".npy"))
-        xs.append(clip_features(f, g["frame_index"].to_numpy()))
+        xs.append(fn(f, g["frame_index"].to_numpy()))
         ya.append(g["accel_label"].map(ACCEL_TO_IDX).to_numpy())
         ys.append(g["steer_label"].map(STEER_TO_IDX).to_numpy())
     return np.concatenate(xs), np.concatenate(ya), np.concatenate(ys)
@@ -74,6 +89,7 @@ def main() -> None:
     parser.add_argument("--val-ratio", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=20260825)
     parser.add_argument("--class-weight", action="store_true", help="클래스 빈도 역수로 CE 가중 (EXP-S3-CLASS-001)")
+    parser.add_argument("--temporal", action="store_true", help="앞/뒤 반윈도 평균 concat(1024-d) (EXP-S3-TEMP-001)")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     torch.manual_seed(args.seed)
@@ -87,12 +103,15 @@ def main() -> None:
     print(f"train {len(train_segs)} seg/{len({route_id(s) for s in train_segs})} route ({len(tr)} samples) | val {len(val_segs)} seg/{len({route_id(s) for s in val_segs})} route ({len(va)} samples)")
 
     t0 = time.time()
-    xtr, atr, str_ = build_xy(tr, args.features)
-    xva, ava, sva = build_xy(va, args.features)
+    xtr, atr, str_ = build_xy(tr, args.features, args.temporal)
+    xva, ava, sva = build_xy(va, args.features, args.temporal)
     print(f"features built in {time.time() - t0:.0f}s: xtr {xtr.shape} xva {xva.shape}")
     print("val accel dist:", Counter(ava.tolist()), "val steer dist:", Counter(sva.tolist()))
 
     full = Stage3ResNetHead(pretrained=True)  # backbone 가중치는 export용, 학습은 head만
+    if args.temporal:  # 입력 1024-d head로 교체 (추론 snippet도 temporal 버전을 써야 함)
+        full.accel = nn.Sequential(nn.Linear(1024, 128), nn.ReLU(), nn.Dropout(0.3), nn.Linear(128, 4))
+        full.steer = nn.Sequential(nn.Linear(1024, 128), nn.ReLU(), nn.Dropout(0.3), nn.Linear(128, 3))
     head_a, head_s = full.accel.to(device), full.steer.to(device)
     params = list(head_a.parameters()) + list(head_s.parameters())
     opt = torch.optim.AdamW(params, lr=args.lr, weight_decay=1e-4)
@@ -133,7 +152,7 @@ def main() -> None:
             torch.save(full.state_dict(), args.out / "best.pt")
 
     with open(args.out / "history.json", "w", encoding="utf-8") as f:
-        json.dump({"history": history, "best_epoch": best_epoch, "best_stage3_score": best, "train_segments": len(train_segs), "val_segments": len(val_segs)}, f, ensure_ascii=False, indent=2)
+        json.dump({"history": history, "best_epoch": best_epoch, "best_stage3_score": best, "train_segments": len(train_segs), "val_segments": len(val_segs), "temporal": args.temporal, "class_weight": args.class_weight}, f, ensure_ascii=False, indent=2)
     print(f"best val_stage3_score={best:.4f} (epoch {best_epoch}) -> {args.out / 'best.pt'}")
 
 

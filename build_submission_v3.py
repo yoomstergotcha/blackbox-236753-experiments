@@ -20,12 +20,15 @@ import argparse
 _ap = argparse.ArgumentParser()
 _ap.add_argument("--stage1-ckpt", type=Path, default=ROOT / "output" / "exp_s1_synth_005" / "best.pt")
 _ap.add_argument("--tag", default="v3", help="산출물 접미사: inference_<tag>.py, model_<tag>/, submit_<tag>.zip")
+_ap.add_argument("--stage1-mode", choices=["synth", "baseline"], default="synth", help="baseline=공식 Stage1 코드/모델 그대로(model_v2/stage1)")
+_ap.add_argument("--stage3-ckpt", type=Path, default=None, help="지정하면 Stage3 best.pt 교체(기본: 제출2와 동일 model_v2/stage3)")
+_ap.add_argument("--stage3-snippet", type=Path, default=None, help="Stage3 추론 snippet 교체(기본 predict_stage3_comma2k19.py)")
 _args = _ap.parse_args()
 STAGE1_CHECKPOINT = _args.stage1_ckpt
 TAG = _args.tag
 INFERENCE_NOTEBOOK = ROOT / "[Baseline_Inference]_3Stage_추론및ZIP생성.ipynb"
 STAGE1_SNIPPET = ROOT / "src" / "train" / "predict_stage1_synth.py"
-STAGE3_SNIPPET = ROOT / "src" / "train" / "predict_stage3_comma2k19.py"
+STAGE3_SNIPPET = _args.stage3_snippet or (ROOT / "src" / "train" / "predict_stage3_comma2k19.py")
 
 
 def build_inference() -> Path:
@@ -34,8 +37,9 @@ def build_inference() -> Path:
     parts = ["".join(c.get("source", [])) for c in notebook["cells"] if c.get("cell_type") == "code" and marker in "".join(c.get("source", []))]
     if len(parts) != 4:
         raise RuntimeError(f"공식 추론 노트북 셀 개수가 예상과 다릅니다: {len(parts)}")
-    common, _official_stage1, stage2, _official_stage3 = parts
-    source = "\n\n".join(p.rstrip() for p in [common, STAGE1_SNIPPET.read_text(encoding="utf-8"), stage2, STAGE3_SNIPPET.read_text(encoding="utf-8")]) + "\n"
+    common, official_stage1, stage2, _official_stage3 = parts
+    stage1_src = official_stage1 if _args.stage1_mode == "baseline" else STAGE1_SNIPPET.read_text(encoding="utf-8")
+    source = "\n\n".join(p.rstrip() for p in [common, stage1_src, stage2, STAGE3_SNIPPET.read_text(encoding="utf-8")]) + "\n"
     tree = ast.parse(source, filename="inference.py")
     defined = {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
     missing = sorted({"predict_stage1", "predict_stage2", "predict_stage3"} - defined)
@@ -56,13 +60,18 @@ def stage_model_files() -> Path:
         if not (src_v2 / stage).is_dir():
             raise FileNotFoundError(f"{src_v2 / stage} 없음 - build_submission_v2.py를 먼저 실행하세요")
         shutil.copytree(src_v2 / stage, model_dir / stage)
-    if not STAGE1_CHECKPOINT.is_file():
-        raise FileNotFoundError(f"{STAGE1_CHECKPOINT} 없음 - train_stage1을 먼저 실행하세요")
-    (model_dir / "stage1").mkdir(parents=True)
-    shutil.copy2(STAGE1_CHECKPOINT, model_dir / "stage1" / "best.pt")
-    thr = STAGE1_CHECKPOINT.parent / "threshold.json"
-    if thr.is_file():
-        shutil.copy2(thr, model_dir / "stage1" / "threshold.json")
+    if _args.stage3_ckpt is not None:
+        shutil.copy2(_args.stage3_ckpt, model_dir / "stage3" / "best.pt")
+    if _args.stage1_mode == "baseline":
+        shutil.copytree(src_v2 / "stage1", model_dir / "stage1")
+    else:
+        if not STAGE1_CHECKPOINT.is_file():
+            raise FileNotFoundError(f"{STAGE1_CHECKPOINT} 없음 - train_stage1을 먼저 실행하세요")
+        (model_dir / "stage1").mkdir(parents=True)
+        shutil.copy2(STAGE1_CHECKPOINT, model_dir / "stage1" / "best.pt")
+        thr = STAGE1_CHECKPOINT.parent / "threshold.json"
+        if thr.is_file():
+            shutil.copy2(thr, model_dir / "stage1" / "threshold.json")
     print("모델 파일 준비 완료:", model_dir)
     return model_dir
 

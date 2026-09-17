@@ -84,9 +84,15 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - **해석 규칙**: S1 ≥ 0.6 → 재촬영 가설 확인, v4를 더 정교화(합성 다양성·해상도/fps 변화) 하면 0.9 근접 가능. S1 ≈ 0.40 유지 → 비공개 재녹화는 또 다른 종류 → Stage1 보류, Stage3 확장(Chunk_2 다운로드 진행 중)으로 전환.
 - **사용자 액션 필요**: `submit_v4.zip` 업로드 (오늘 3회 중 2회 사용, 1회 남음).
 
-### 제출 4 (예정): Stage3 확장 — comma2k19 데이터 추가 + backbone unfreeze
+### 제출 5: Stage3 확장 (Chunk_1+2, 291세그먼트, class-weighted head) — **완료, 제출 대기**
 
-- 공식 Stage3 샘플 = comma2k19 규격이므로 Chunk 추가(또는 Chunk_1 전체 200세그먼트 사용)와 backbone 일부 unfreeze가 직접 효과를 낼 가능성이 높다. 런타임 여유(12분/60분)도 충분.
+- Chunk_2 추가 → 291세그먼트/42route(5배). frozen backbone이라 프레임 특징을 캐시(715MB)하고 head만 학습 → 실험 1분. `EXP-S3-CLASS-001`(class-weighted CE) 내부 val 0.566(63seg/8route), **공식 라벨(정렬 버그 수정 후) 0.584→0.743**. 상세 [EXPERIMENT_DESIGN.md §16](EXPERIMENT_DESIGN.md).
+- 두 변형 준비: **v4 실패 시 `submit_v5a.zip`**(Stage1 baseline), **v4 성공 시 `submit_v5b.zip`**(Stage1 v4 모델). 어느 쪽이든 직전 제출 대비 Stage3만 변경.
+- 기대: LB S3 0.370 → 0.45~0.55.
+
+### 그 다음 (예정)
+- Stage3: accel_f1이 병목(0.56 내부 val) — optical-flow/ego-motion 특징(가이드 §9), 차이 벡터 기반 temporal 변형, backbone 부분 unfreeze.
+- Stage1: v4 결과에 따라 분기(§ 제출 4).
 
 ### 이후 — Stage2 착수
 
