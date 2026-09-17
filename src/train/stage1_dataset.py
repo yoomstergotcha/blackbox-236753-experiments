@@ -20,7 +20,14 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-from src.data.stage1.synth_rerecord import apply_base, apply_rerecord, sample_base_params, sample_params
+from src.data.stage1.synth_rerecord import (
+    apply_base,
+    apply_capture,
+    apply_rerecord,
+    sample_base_params,
+    sample_capture_params,
+    sample_params,
+)
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
@@ -44,14 +51,18 @@ def random_crop(rgb: np.ndarray, rng: np.random.Generator, size: int = CROP) -> 
     return rgb[y : y + size, x : x + size]
 
 
-def grid_crops(rgb: np.ndarray, size: int = CROP, n: int = 5) -> list[np.ndarray]:
-    """추론용 고정 크롭: 중앙 + 4개 사분면 중심 (원본 해상도 유지)."""
+def grid_crops(rgb: np.ndarray, size: int = CROP, n: int = 9) -> list[np.ndarray]:
+    """추론용 고정 크롭: 중앙 + 4개 사분면 중심 + 4개 모서리 (원본 해상도 유지).
+    모서리 크롭은 화면 재촬영의 베젤/배경 영역을 보기 위해 추가(v4)."""
     h, w = rgb.shape[:2]
     if h < size or w < size:
         scale = size / min(h, w) + 1e-3
         rgb = cv2.resize(rgb, (int(w * scale) + 1, int(h * scale) + 1), interpolation=cv2.INTER_LINEAR)
         h, w = rgb.shape[:2]
-    centers = [(h // 2, w // 2), (h // 4, w // 4), (h // 4, 3 * w // 4), (3 * h // 4, w // 4), (3 * h // 4, 3 * w // 4)]
+    centers = [
+        (h // 2, w // 2), (h // 4, w // 4), (h // 4, 3 * w // 4), (3 * h // 4, w // 4), (3 * h // 4, 3 * w // 4),
+        (size // 2, size // 2), (size // 2, w - size // 2), (h - size // 2, size // 2), (h - size // 2, w - size // 2),
+    ]
     out = []
     for cy, cx in centers[:n]:
         y = int(np.clip(cy - size // 2, 0, h - size))
@@ -61,9 +72,10 @@ def grid_crops(rgb: np.ndarray, size: int = CROP, n: int = 5) -> list[np.ndarray
 
 
 class Stage1TrainDataset(Dataset):
-    def __init__(self, manifest: pd.DataFrame, seed: int = 20260825, scale_range=(0.6, 1.2), official_repeat: int = 3):
+    def __init__(self, manifest: pd.DataFrame, seed: int = 20260825, scale_range=(0.6, 1.2), official_repeat: int = 3, capture_ratio: float = 0.5):
         self.seed = seed
         self.scale_range = scale_range
+        self.capture_ratio = capture_ratio
         self.epoch = 0
         items = []  # (frame_path, is_official, label, synth)
         for row in manifest.itertuples(index=False):
@@ -95,7 +107,11 @@ class Stage1TrainDataset(Dataset):
         if (not official) or rng.random() < 0.3:
             rgb = apply_base(rgb, sample_base_params(rng))
         if synth:
-            rgb = apply_rerecord(rgb, sample_params(rng), rng)
+            # 절반은 공개 예제식(미세: 블러+그레인), 절반은 실제 화면 재촬영식(v4, 강함)
+            if rng.random() < self.capture_ratio:
+                rgb = apply_capture(rgb, sample_capture_params(rng), rng)
+            else:
+                rgb = apply_rerecord(rgb, sample_params(rng), rng)
 
         crop = random_crop(rgb, rng)
         if rng.random() < 0.5:

@@ -15,7 +15,14 @@ from pathlib import Path
 ROOT = Path.cwd()
 sys.path.insert(0, str(ROOT))
 
-STAGE1_CHECKPOINT = ROOT / "output" / "exp_s1_synth_005" / "best.pt"  # EXP-S1-SYNTH-005 (LOPO 10/10, 최종 trainall)
+import argparse
+
+_ap = argparse.ArgumentParser()
+_ap.add_argument("--stage1-ckpt", type=Path, default=ROOT / "output" / "exp_s1_synth_005" / "best.pt")
+_ap.add_argument("--tag", default="v3", help="산출물 접미사: inference_<tag>.py, model_<tag>/, submit_<tag>.zip")
+_args = _ap.parse_args()
+STAGE1_CHECKPOINT = _args.stage1_ckpt
+TAG = _args.tag
 INFERENCE_NOTEBOOK = ROOT / "[Baseline_Inference]_3Stage_추론및ZIP생성.ipynb"
 STAGE1_SNIPPET = ROOT / "src" / "train" / "predict_stage1_synth.py"
 STAGE3_SNIPPET = ROOT / "src" / "train" / "predict_stage3_comma2k19.py"
@@ -34,14 +41,14 @@ def build_inference() -> Path:
     missing = sorted({"predict_stage1", "predict_stage2", "predict_stage3"} - defined)
     if missing:
         raise RuntimeError(f"필수 함수 누락: {missing}")
-    out = ROOT / "inference_v3.py"
+    out = ROOT / f"inference_{TAG}.py"
     out.write_text(source, encoding="utf-8")
     print("생성 완료:", out)
     return out
 
 
 def stage_model_files() -> Path:
-    model_dir = ROOT / "model_v3"
+    model_dir = ROOT / f"model_{TAG}"
     if model_dir.exists():
         shutil.rmtree(model_dir)
     src_v2 = ROOT / "model_v2"
@@ -63,10 +70,10 @@ def stage_model_files() -> Path:
 def smoke_test(model_dir: Path) -> None:
     import importlib
 
-    sys.modules.pop("inference_v3", None)
-    module = importlib.import_module("inference_v3")
+    sys.modules.pop(f"inference_{TAG}", None)
+    module = importlib.import_module(f"inference_{TAG}")
     smoke_dir = ROOT / "sample_evaluation_data"
-    out_dir = ROOT / "output" / "submission_v3_smoke"
+    out_dir = ROOT / "output" / f"submission_{TAG}_smoke"
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, fn, sub in [("stage1", module.predict_stage1, "stage1"), ("stage2", module.predict_stage2, "stage2"), ("stage3", module.predict_stage3, "stage3")]:
         df = fn(smoke_dir / sub, model_dir / sub)
@@ -76,7 +83,7 @@ def smoke_test(model_dir: Path) -> None:
 
 
 def build_zip(inference_path: Path, model_dir: Path) -> None:
-    submit_path = ROOT / "submit_v3.zip"
+    submit_path = ROOT / f"submit_{TAG}.zip"
     if submit_path.exists():
         submit_path.unlink()
     with zipfile.ZipFile(submit_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:

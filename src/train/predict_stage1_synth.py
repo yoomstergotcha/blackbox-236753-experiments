@@ -31,7 +31,10 @@ def _s1_grid_crops(rgb: np.ndarray, size: int = _S1_CROP):
         scale = size / min(h, w) + 1e-3
         rgb = cv2.resize(rgb, (int(w * scale) + 1, int(h * scale) + 1), interpolation=cv2.INTER_LINEAR)
         h, w = rgb.shape[:2]
-    centers = [(h // 2, w // 2), (h // 4, w // 4), (h // 4, 3 * w // 4), (3 * h // 4, w // 4), (3 * h // 4, 3 * w // 4)]
+    centers = [
+        (h // 2, w // 2), (h // 4, w // 4), (h // 4, 3 * w // 4), (3 * h // 4, w // 4), (3 * h // 4, 3 * w // 4),
+        (size // 2, size // 2), (size // 2, w - size // 2), (h - size // 2, size // 2), (h - size // 2, w - size // 2),
+    ]  # 중앙 + 사분면 4 + 모서리 4 (모서리는 재촬영 시 베젤/배경 영역)
     crops = []
     for cy, cx in centers:
         y = int(np.clip(cy - size // 2, 0, h - size))

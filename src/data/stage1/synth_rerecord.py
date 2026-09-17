@@ -192,3 +192,123 @@ def apply_rerecord(rgb: np.ndarray, p: dict, rng: np.random.Generator) -> np.nda
 def rerecord_frame(rgb: np.ndarray, rng: np.random.Generator | None = None) -> np.ndarray:
     rng = rng or np.random.default_rng()
     return apply_rerecord(rgb, sample_params(rng), rng)
+
+
+# ---------------------------------------------------------------------------
+# v4 (EXP-S1-SYNTH-006): '실제 화면 재촬영' 합성 — 카메라로 모니터/화면을 찍은 영상
+# ---------------------------------------------------------------------------
+# submit_v3(공개 예제식 재녹화를 LOPO 10/10으로 잡던 모델)가 LB Stage1 0.4008로 baseline과
+# 같았다 = 비공개 RERECORDED를 하나도 못 잡음. 비공개 재녹화는 공개 예제(재압축 파생본)와
+# 다른 종류, 즉 가이드 §2.3이 열거한 실제 재촬영 특징(화면 테두리·주사 패턴·반사광·원근·
+# 기기 움직임·해상도 변화)을 가진 영상일 가능성이 높다. 그 모습을 강하게 재현한다:
+#   재생 중인 화면(기저 열화) -> 모아레 2중 격자 + 주사 밴딩 -> 베젤/배경 위에 화면 합성
+#   (화면이 프레임의 55~95%) -> 원근 왜곡 -> 손떨림(프레임별 이동/미세 스케일) ->
+#   카메라 색온도/감마/대비/비네팅/반사광 -> 초점 블러 -> 재인코딩 -> 센서 노이즈
+
+
+def sample_capture_params(rng: np.random.Generator) -> dict:
+    return {
+        "screen_frac": float(rng.uniform(0.55, 0.95)) if rng.random() < 0.7 else 1.0,
+        "screen_offset": rng.uniform(-0.08, 0.08, size=2).astype(np.float32),
+        "bezel_frac": float(rng.uniform(0.01, 0.05)),
+        "bezel_color": int(rng.integers(5, 45)),
+        "bg_mode": str(rng.choice(["dark", "gradient", "texture"])),
+        "bg_level": int(rng.integers(10, 90)),
+        "persp_mag": float(rng.uniform(0.02, 0.08)),
+        "moire_alpha": float(rng.uniform(0.05, 0.25)),
+        "moire_freq": float(rng.uniform(0.08, 0.5)),
+        "moire_angle": float(rng.uniform(0, np.pi)),
+        "moire2": bool(rng.random() < 0.5),
+        "moire2_freq": float(rng.uniform(0.08, 0.5)),
+        "moire2_angle": float(rng.uniform(0, np.pi)),
+        "banding": bool(rng.random() < 0.5),
+        "band_period": float(rng.uniform(40, 220)),
+        "band_alpha": float(rng.uniform(0.05, 0.2)),
+        "band_phase": float(rng.uniform(0, 2 * np.pi)),
+        "wb": rng.uniform(0.85, 1.15, size=3).astype(np.float32),
+        "gamma": float(rng.uniform(0.8, 1.3)),
+        "contrast": float(rng.uniform(0.85, 1.2)),
+        "vignette": float(rng.uniform(0.0, 0.35)),
+        "reflection": bool(rng.random() < 0.5),
+        "refl_alpha": float(rng.uniform(0.05, 0.3)),
+        "refl_center": rng.uniform(0.1, 0.9, size=2).astype(np.float32),
+        "refl_radius": float(rng.uniform(0.15, 0.5)),
+        "focus_blur": float(rng.uniform(0.3, 1.5)),
+        "noise_sigma": float(rng.uniform(2.0, 8.0)),
+        "jpeg_q": int(rng.integers(50, 91)),
+        "jitter_px": int(rng.integers(1, 7)),
+        "jitter_scale": float(rng.uniform(0.0, 0.015)),
+    }
+
+
+def _screen_patterns(x: np.ndarray, p: dict) -> np.ndarray:
+    h, w = x.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    u = xx * np.cos(p["moire_angle"]) + yy * np.sin(p["moire_angle"])
+    pat = 0.5 * (1.0 + np.sin(2.0 * np.pi * p["moire_freq"] * u))
+    if p["moire2"]:
+        u2 = xx * np.cos(p["moire2_angle"]) + yy * np.sin(p["moire2_angle"])
+        pat = pat * 0.5 * (1.0 + np.sin(2.0 * np.pi * p["moire2_freq"] * u2))
+    mod = (1.0 - p["moire_alpha"]) + p["moire_alpha"] * pat
+    if p["banding"]:
+        band = 1.0 - p["band_alpha"] * 0.5 * (1.0 + np.sin(2.0 * np.pi * yy[:, :1] / p["band_period"] + p["band_phase"]))
+        mod = mod * band
+    return np.clip(x.astype(np.float32) * mod[:, :, None], 0, 255).astype(np.uint8)
+
+
+def _composite_screen(display: np.ndarray, p: dict, rng: np.random.Generator) -> np.ndarray:
+    h, w = display.shape[:2]
+    if p["screen_frac"] >= 0.99:
+        return display
+    sh, sw = max(16, int(h * p["screen_frac"])), max(16, int(w * p["screen_frac"]))
+    screen = cv2.resize(display, (sw, sh), interpolation=cv2.INTER_AREA)
+    if p["bg_mode"] == "dark":
+        canvas = np.full((h, w, 3), p["bg_level"] // 3, np.uint8)
+    elif p["bg_mode"] == "gradient":
+        g = np.linspace(p["bg_level"] * 0.3, p["bg_level"], h, dtype=np.float32)[:, None, None]
+        canvas = np.clip(np.repeat(np.repeat(g, w, axis=1), 3, axis=2), 0, 255).astype(np.uint8)
+    else:
+        tex = rng.uniform(0, 1, size=(8, 8, 3)).astype(np.float32)
+        tex = cv2.resize(tex, (w, h), interpolation=cv2.INTER_CUBIC)
+        canvas = np.clip(tex * p["bg_level"] + p["bg_level"] * 0.2, 0, 255).astype(np.uint8)
+    b = int(p["bezel_frac"] * min(h, w))
+    cy = (h - sh) // 2 + int(p["screen_offset"][0] * h)
+    cx = (w - sw) // 2 + int(p["screen_offset"][1] * w)
+    cy = int(np.clip(cy, b, h - sh - b)) if h - sh - b >= b else (h - sh) // 2
+    cx = int(np.clip(cx, b, w - sw - b)) if w - sw - b >= b else (w - sw) // 2
+    y0, x0 = max(0, cy - b), max(0, cx - b)
+    canvas[y0 : min(h, cy + sh + b), x0 : min(w, cx + sw + b)] = p["bezel_color"]
+    canvas[cy : cy + sh, cx : cx + sw] = screen
+    return canvas
+
+
+def apply_capture(rgb: np.ndarray, p: dict, rng: np.random.Generator) -> np.ndarray:
+    """rgb: 재생 중인 화면 이미지(기저 열화까지 적용된 상태). 영상 단위 파라미터 p, 프레임별
+    손떨림·노이즈는 rng."""
+    h, w = rgb.shape[:2]
+    x = _screen_patterns(rgb, p)
+    x = _composite_screen(x, p, rng)
+    x = _perspective(x, p["persp_mag"], np.random.default_rng(int(p["bezel_color"] * 7919 + int(p["persp_mag"] * 1e4))))
+    # 손떨림: 프레임별 이동 + 미세 스케일
+    dx, dy = rng.integers(-p["jitter_px"], p["jitter_px"] + 1, size=2)
+    s = 1.0 + float(rng.uniform(-p["jitter_scale"], p["jitter_scale"]))
+    m = np.float32([[s, 0, (1 - s) * w / 2 + dx], [0, s, (1 - s) * h / 2 + dy]])
+    x = cv2.warpAffine(x, m, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    # 카메라: 색온도/감마/대비/비네팅/반사광
+    f = x.astype(np.float32) / 255.0
+    f = f * p["wb"][None, None, :]
+    f = np.power(np.clip(f, 0, 1), p["gamma"])
+    f = (f - 0.5) * p["contrast"] + 0.5
+    if p["vignette"] > 0.01:
+        yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+        r2 = ((yy - h / 2) / (h / 2)) ** 2 + ((xx - w / 2) / (w / 2)) ** 2
+        f = f * (1.0 - p["vignette"] * np.clip(r2, 0, 1))[:, :, None]
+    x = np.clip(f * 255.0, 0, 255).astype(np.uint8)
+    if p["reflection"]:
+        x = _reflection(x, p)
+    if p["focus_blur"] > 0.2:
+        x = cv2.GaussianBlur(x, (0, 0), p["focus_blur"])
+    x = _jpeg(x, p["jpeg_q"])
+    noise = rng.normal(0, p["noise_sigma"], size=(h, w, 1)).astype(np.float32)
+    noise = cv2.GaussianBlur(noise, (0, 0), 0.7)[:, :, None] * 1.8
+    return np.clip(x.astype(np.float32) + noise, 0, 255).astype(np.uint8)

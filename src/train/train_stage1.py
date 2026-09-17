@@ -29,7 +29,14 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torchvision.models import ResNet18_Weights, resnet18
 
-from src.data.stage1.synth_rerecord import apply_base, apply_rerecord, sample_base_params, sample_params
+from src.data.stage1.synth_rerecord import (
+    apply_base,
+    apply_capture,
+    apply_rerecord,
+    sample_base_params,
+    sample_capture_params,
+    sample_params,
+)
 from src.eval.metrics import macro_f1
 
 from .stage1_dataset import Stage1EvalFrames, Stage1TrainDataset
@@ -88,12 +95,17 @@ def summarize(prob: dict, true: dict) -> dict:
 def synth_holdout_probs(model, device, val_synth: pd.DataFrame, seed: int) -> tuple[dict, dict]:
     frames, true = {}, {}
     rng = np.random.default_rng([seed, 999])
-    for sid, g in val_synth.groupby("source_id"):
+    for i, (sid, g) in enumerate(val_synth.groupby("source_id")):
         base = sample_base_params(rng)
         fr = [apply_base(load_rgb(p), base) for p in g["frame_path"]]
         frames[f"{sid}#orig"], true[f"{sid}#orig"] = fr, "ORIGINAL"
-        p = sample_params(rng)
-        frames[f"{sid}#rerec"], true[f"{sid}#rerec"] = [apply_rerecord(f, p, rng) for f in fr], "RERECORDED"
+        if i % 2 == 0:  # 절반은 공개 예제식(미세), 절반은 화면 재촬영식(v4)
+            p = sample_params(rng)
+            rerec = [apply_rerecord(f, p, rng) for f in fr]
+        else:
+            p = sample_capture_params(rng)
+            rerec = [apply_capture(f, p, rng) for f in fr]
+        frames[f"{sid}#rerec"], true[f"{sid}#rerec"] = rerec, "RERECORDED"
     return video_probs(model, device, frames), true
 
 
