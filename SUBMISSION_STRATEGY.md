@@ -97,7 +97,7 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 
 - 가설: accel 병목은 frozen ResNet 특징이 카메라 움직임을 못 담아서. Farneback 광류 요약 13-d × (16프레임 mean/std/delta + 지평 16/32/64/128 log-ratio) = 59-d를 head에 concat. 10fps 비공개 대비로 학습에 10fps 시뮬레이션 복제(`--fps-aug`).
 - 내부 val 0.571(대조군) → 0.655 (motion) → **0.676** (+영상 내 logit 이동평균 31프레임; 파일 간 통계 없음), official 10fps-sim 0.735 → 0.794 (accel 0.833). 지평 확장(002a/b)은 효과 없음. 상세 [EXPERIMENT_DESIGN.md §17](EXPERIMENT_DESIGN.md).
-- `submit_v6.zip`(127MB, MD5 `da039061c17fbf52243b89e48feb2222`; MOTION-001b + SMOOTH-001): Stage1 = v4 모델(제출 4/5b와 동일), Stage2 = baseline, Stage3만 변경 → v5b 대비 S3 델타만 귀속. stage1/2 smoke 출력 v5b와 `cmp` 동일 확인. Release `submissions-2026-09-17`에 17조각으로 업로드.
+- `submit_v6.zip`(127MB, MD5 `da039061c17fbf52243b89e48feb2222`; MOTION-001b + SMOOTH-001): Stage1 = v4 모델(제출 4/5b와 동일), Stage2 = baseline, Stage3만 변경 → v5b 대비 S3 델타만 귀속. stage1/2 smoke 출력 v5b와 `cmp` 동일 확인. Release `submissions-2026-09-17`에 16조각으로 업로드.
 - 제출 순서: v5b → v6 (둘 다 v4 대비 Stage3만 변경이라 순서가 바뀌어도 각각 귀속 가능). v5a는 폐기.
 - 기대: LB S3 0.37 → (v5b 결과 × 1.05~1.15). v5b LB가 나오면 v6 예측치를 갱신.
 
