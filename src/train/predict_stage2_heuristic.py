@@ -5,8 +5,9 @@
   - collision_frame: 접촉 순간 카메라가 위아래로 튄다(피칭). 프레임 간 phase-correlation 수직 이동량의 robust z-score
     (영상 내부 중앙값/MAD — 파일 간 통계 없음)에서 최대 jolt 구간의 시작 프레임. 공개 5클립 5/5 (±0.3s).
   - entry_frame: 피해차량이 차선에 진입한 뒤 0.3~0.6s 안에 접촉하는 경우가 많아(공개 5클립 판독) collision - 5프레임.
-  - entry_side: 충돌 직전 0.8s 동안 도로 영역(하단 65%) 프레임 변화 에너지의 가로 무게중심이 화면 중앙의 왼쪽이면 LEFT.
-  - evasion_space: 판단 근거가 없어 1(베이스라인과 동일한 상수).
+  - entry_side: 접근 구간 도로 영역(하단 65%) 변화 에너지의 좌측 비율이 영상 전체 기준선보다 크면 LEFT(상대값).
+    공개 5클립 수동 판독과 2/4 일치 — 사실상 코인플립이지만 두 클래스를 모두 내므로 macro-F1상 상수 예측보다 기대값이 높다.
+  - evasion_space: 접근 구간 변화 에너지가 화면 중앙에 집중(>0.8)이면 정면 추돌로 0, 아니면 1.
 프레임 번호는 파일명의 숫자(가이드 §3.3)를 그대로 제출한다. torch 불필요(CPU만).
 """
 import re
@@ -20,7 +21,7 @@ _S2_W, _S2_H = 320, 180
 _S2_TAU = 5.0  # jolt 판정 z-score
 _S2_GAP = 5  # 최대 jolt에서 뒤로 탐색할 때 허용하는 비-jolt 프레임 수
 _S2_ENTRY_OFFSET = 5  # 프레임 (10fps 가정 0.5s)
-_S2_SIDE_WINDOW = 8  # 프레임
+_S2_PRE_LO, _S2_PRE_HI = 12, 2  # 충돌 직전 접근 구간 [c-12, c-2): 접촉 프레임 자체의 전역 jolt는 제외 (±1프레임 이동에 안정)
 
 
 def _s2_frame_number(path: Path) -> int:
@@ -71,19 +72,34 @@ def _s2_collision_index(zs, zv, zd) -> int:
         i = prev[0]
 
 
-def _s2_entry_side(gray, c: int) -> str:
-    lo = max(c - _S2_SIDE_WINDOW, 1)
+def _s2_diff_energy(gray, lo: int, hi: int) -> np.ndarray:
+    """[lo, hi) 구간의 |frame_i - frame_{i-1}| 누적 맵(도로 영역 = 하단 65%)."""
     acc = np.zeros((_S2_H, _S2_W), np.float32)
-    for i in range(lo, max(c, lo) + 1):
-        if i < len(gray):
-            acc += np.abs(gray[i] - gray[i - 1])
-    road = acc[int(_S2_H * 0.35) :, :]
-    col = road.sum(0)
-    total = float(col.sum())
-    if total <= 0:
-        return "LEFT"
-    cx = float((col * np.arange(_S2_W)).sum() / total)
-    return "LEFT" if cx < _S2_W / 2 else "RIGHT"
+    for i in range(max(lo, 1), min(hi, len(gray))):
+        acc += np.abs(gray[i] - gray[i - 1])
+    return acc[int(_S2_H * 0.35) :, :]
+
+
+def _s2_left_fraction(energy: np.ndarray) -> float:
+    left, right = float(energy[:, : _S2_W // 2].sum()), float(energy[:, _S2_W // 2 :].sum())
+    return left / (left + right + 1e-6)
+
+
+def _s2_entry_side(gray, c: int) -> str:
+    """충돌 직전 창의 좌측 에너지 비율이 영상 전체(에고 모션·도로 기하의 기준선)보다 크면 LEFT.
+    절대값은 카메라 장착/도로 기하로 한쪽에 치우쳐(샘플 5개 전부 RIGHT) 영상 자체 기준선 대비 상대값을 쓴다."""
+    pre = _s2_left_fraction(_s2_diff_energy(gray, c - _S2_PRE_LO, c - _S2_PRE_HI))
+    base = _s2_left_fraction(_s2_diff_energy(gray, 0, len(gray)))
+    return "LEFT" if pre > base else "RIGHT"
+
+
+def _s2_evasion_space(gray, c: int) -> int:
+    """충돌 직전 변화 에너지가 화면 중앙(가로 30~70%)에 집중되면 정면 추돌(앞차 급정거)로 보고 0, 측면 진입이면 1.
+    공개 5클립(창 [c-12,c-2)): 추돌 클립 0.92~0.93 vs 측면 진입 0.52~0.71 -> 임계 0.8 (검출 c ±1프레임에 안정)."""
+    energy = _s2_diff_energy(gray, c - _S2_PRE_LO, c - _S2_PRE_HI)
+    col = energy.sum(0)
+    center = float(col[int(_S2_W * 0.3) : int(_S2_W * 0.7)].sum() / (col.sum() + 1e-6))
+    return 0 if center > 0.8 else 1
 
 
 def predict_stage2(data_dir, model_dir):
@@ -100,9 +116,9 @@ def predict_stage2(data_dir, model_dir):
             shift, vert, diff = _s2_signals(gray)
             zs, zv, zd = _s2_robust_z(shift), _s2_robust_z(vert), _s2_robust_z(diff)
             c = _s2_collision_index(zs, zv, zd)
-            side = _s2_entry_side(gray, c)
+            side, evasion = _s2_entry_side(gray, c), _s2_evasion_space(gray, c)
         except Exception:
-            c, side = len(paths) - 1, "LEFT"
+            c, side, evasion = len(paths) - 1, "LEFT", 1
         e = max(c - _S2_ENTRY_OFFSET, 0)
-        rows.append({"ID": folder.name, "collision_frame": int(numbers[c]), "entry_frame": int(numbers[e]), "evasion_space": 1, "entry_side": side})
+        rows.append({"ID": folder.name, "collision_frame": int(numbers[c]), "entry_frame": int(numbers[e]), "evasion_space": int(evasion), "entry_side": side})
     return pd.DataFrame(rows, columns=["ID", "collision_frame", "entry_frame", "evasion_space", "entry_side"])

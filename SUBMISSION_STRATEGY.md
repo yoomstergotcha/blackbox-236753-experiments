@@ -108,8 +108,14 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - `submit_v7.zip`(127MB, MD5 `abb81bd4e0673b77bdd71b75db30fe3c`): Stage2/3 = v6와 동일(Stage1만 변경).
 - 해석 규칙: S1 ≈ 1.0 → 채택(이후 모든 제출의 Stage1). S1 ≈ 0.24(전부 RERECORDED 판정) 또는 0.40 → 비공개는 서명이 균일, 규칙 폐기.
 
+### 제출 8: Stage2 = 학습 없는 물리 휴리스틱 (EXP-S2-HEUR-001) — **완료, 제출 대기** (2026-09-17 23:20)
+
+- 비공개 Stage2는 프레임 이미지 폴더, 공개 라벨은 t_collision 5개뿐 → 학습 대신 물리 신호: 충돌 = 카메라 수직 jolt(phase-correlation) onset(**공개 5/5**), entry = 충돌 − 0.5s, 회피공간 = 접근 구간 변화 에너지의 중앙집중도(추돌이면 0), 진입방향 = 상대 좌측비율(약함). 상세 [EXPERIMENT_DESIGN.md §18](EXPERIMENT_DESIGN.md).
+- `submit_v8.zip`(127MB, MD5 `a4f0c834b6017d0d9de5b22bebfccb40`): Stage1 = v4, Stage3 = v6, Stage2만 변경.
+- 기대: S2 0.13 → 0.30~0.45 (total +0.07~0.13). 1등 갭 중 가장 큰 항목.
+
 ### 그 다음 (예정)
-- Stage3: ego-motion 특징으로 accel 0.56→0.67. 다음: 지평 확장/흐름 방향 히스토그램(head 실험 각 1분), backbone 부분 unfreeze, Stage2 착수.
+- LB로 v7(S1)·v8(S2) 확인 후 채택분을 합친 v9. Stage2: 사고 시점/진입 방향 라벨이 있는 외부 데이터셋 라이선스 조사 재개(DoTA/CCD/DAD/Nexar). Stage3: 1D temporal conv, backbone 부분 unfreeze.
 - Stage1: 보류(v4 0.4237). 재개 조건: 비공개 재녹화 외형에 대한 새 가설(예: 코덱/해상도/fps 재인코딩, 프레임 중복·깜빡임 등 시간축 흔적)이 생겼을 때 1슬롯 프로브.
 
 ### 이후 — Stage2 착수
