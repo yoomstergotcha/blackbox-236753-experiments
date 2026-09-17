@@ -111,3 +111,11 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 ## 6. 기록
 
 모든 제출은 [experiments/experiment_log.csv](experiments/experiment_log.csv)에 실험으로 기록하고, 실제 LB 점수를 사용자에게 받으면 이 문서와 로그에 소급 반영한다.
+
+### 제출물 전달 (2026-09-17)
+
+- 사용자가 외부에 있어 zip을 원격으로 전달. 이 PC는 ~10MB/10초를 넘는 업로드가 끊기므로(SendUserFile 30MiB 한도, Release 자산 직접 업로드 실패) `split -b 8m`으로 나눠 조각별 재시도 업로드.
+- GitHub Release **[submissions-2026-09-17](https://github.com/yoomstergotcha/blackbox-236753-experiments/releases/tag/submissions-2026-09-17)**: `submit_v4.zip`(16조각), `submit_v5b.zip`(16조각), `submit_v5a.zip`(27조각) + `MD5SUMS.txt`. 조각 합계 크기·MD5는 로컬 원본과 일치 확인(v4 `8fd0362d…`, v5b `4d526a27…`, v5a `7686a8fd…`).
+- 합치기: Windows `copy /b submit_v4.zip.part* submit_v4.zip` / macOS·Linux `cat submit_v4.zip.part* > submit_v4.zip`, 이후 MD5 대조.
+- 제출 순서: v4 먼저 → S1 ≈ 0.40이면 v5a, S1 ≥ 0.6이면 v5b (§ 제출 4·5).
+- 부수 수정: 실수로 커밋됐던 `data/external/comma2k19_multi/`(14GB, 11,400파일)를 미푸시 커밋 2개에서 제거하고 `.gitignore`에 추가(원본은 dataset_registry.csv 출처에서 재획득 가능).
