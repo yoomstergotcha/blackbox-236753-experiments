@@ -10,13 +10,13 @@ data/external/comma2k19_demo64/
 
 # 학습으로 재생성 가능한 산출물 (모델 체크포인트, 제출 zip, 스크래치 출력)
 model/
-model_v2/
+model_v*/
 submit.zip
-submit_v2.zip
+submit_v*.zip
 output/
 sample_evaluation_data/
 inference.py
-inference_v2.py
+inference_v*.py
 .tools/
 
 # 대회 공식 공개 샘플 영상 / comma2k19 실측 영상 (용량이 커서 git에는 안 올림 -

@@ -70,11 +70,12 @@ Stage3 = 0.7×accel_macroF1 + 0.3×steer_macroF1
 
 Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-label 검증을 믿고 슬롯을 써도 된다. 1등 대비 가중 갭 S1 0.109 / S2 0.165 / S3 0.154. **우선순위 재조정: Stage1(degenerate, 자체 합성으로 해결 가능, 가장 싼 큰 이득) → Stage3 확장(공식 Stage3 샘플이 comma2k19 규격임을 확인, 데이터 추가가 직접 효과) → Stage2.** 상세: [EXPERIMENT_DESIGN.md §14](EXPERIMENT_DESIGN.md).
 
-### 제출 3: Stage1만 합성 재녹화 모델로 교체 — 진행 중 (2026-09-17)
+### 제출 3: Stage1만 교체 — **완료, 제출 대기 중** (2026-09-17)
 
-- `EXP-S1-SYNTH-001`: comma2k19+OPEN 원본 프레임에 재녹화 시뮬레이션(재압축·모아레·스캔라인·색 변화·반사광·베젤·원근·흔들림·해상도 저하)을 즉석 합성해 ResNet18 fine-tune. 검증은 공식 5쌍(DACON식 실제 재녹화) + comma route hold-out, 영상 단위 macro-F1.
-- `build_submission_v3.py` → `submit_v3.zip` (Stage2 baseline, Stage3 = 제출 2와 동일).
-- 기대: S1 0.40 → 0.7~0.9 (total +0.06~0.10). 리스크: 비공개 재녹화 방식이 합성과 다를 수 있음 — 그래도 all-ORIGINAL보다 나쁘긴 어렵다(0.4046 이하로 떨어지려면 학습된 모델이 무작위보다 못해야 함).
+- 합성만으로는(EXP-S1-SYNTH-001~004) 공식 5쌍을 못 맞춤 → 공식 5쌍의 변환을 실측(블러+그레인+대비, 정렬 이동 없음)하고, **공식 5쌍을 학습에 포함 + leave-one-pair-out 검증**(EXP-S1-SYNTH-005): **OOF 10영상 macro-F1 1.0, AUC 1.0.** 상세 [EXPERIMENT_DESIGN.md §15](EXPERIMENT_DESIGN.md).
+- `submit_v3.zip`(127MB): Stage1 = 005 모델(+threshold.json), Stage2 = baseline, Stage3 = 제출 2와 동일 — Stage2/3 smoke 출력이 제출 2와 바이트 동일함을 `cmp`로 확인.
+- 기대: S1 0.40 → 0.9+ (비공개 재녹화가 공개 예제와 같은 처리일 때, total +0.10). 실제 재촬영이 섞여 있으면 0.5~0.8 → LB 값 자체가 비공개 처리 방식을 알려주는 진단이 된다.
+- **사용자 액션 필요**: `submit_v3.zip` 업로드.
 
 ### 제출 4 (예정): Stage3 확장 — comma2k19 데이터 추가 + backbone unfreeze
 

@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path.cwd()
 sys.path.insert(0, str(ROOT))
 
-STAGE1_CHECKPOINT = ROOT / "output" / "exp_s1_synth_001" / "best.pt"
+STAGE1_CHECKPOINT = ROOT / "output" / "exp_s1_synth_005" / "best.pt"  # EXP-S1-SYNTH-005 (LOPO 10/10, 최종 trainall)
 INFERENCE_NOTEBOOK = ROOT / "[Baseline_Inference]_3Stage_추론및ZIP생성.ipynb"
 STAGE1_SNIPPET = ROOT / "src" / "train" / "predict_stage1_synth.py"
 STAGE3_SNIPPET = ROOT / "src" / "train" / "predict_stage3_comma2k19.py"
