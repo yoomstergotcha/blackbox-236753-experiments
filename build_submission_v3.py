@@ -22,12 +22,14 @@ _ap.add_argument("--stage1-ckpt", type=Path, default=ROOT / "output" / "exp_s1_s
 _ap.add_argument("--tag", default="v3", help="산출물 접미사: inference_<tag>.py, model_<tag>/, submit_<tag>.zip")
 _ap.add_argument("--stage1-mode", choices=["synth", "baseline"], default="synth", help="baseline=공식 Stage1 코드/모델 그대로(model_v2/stage1)")
 _ap.add_argument("--stage3-ckpt", type=Path, default=None, help="지정하면 Stage3 best.pt 교체(기본: 제출2와 동일 model_v2/stage3)")
+_ap.add_argument("--stage1-snippet", type=Path, default=None, help="Stage1 추론 snippet 교체(기본 predict_stage1_synth.py)")
+_ap.add_argument("--stage2-snippet", type=Path, default=None, help="Stage2 추론 snippet 교체(기본: 공식 baseline 셀)")
 _ap.add_argument("--stage3-snippet", type=Path, default=None, help="Stage3 추론 snippet 교체(기본 predict_stage3_comma2k19.py)")
 _args = _ap.parse_args()
 STAGE1_CHECKPOINT = _args.stage1_ckpt
 TAG = _args.tag
 INFERENCE_NOTEBOOK = ROOT / "[Baseline_Inference]_3Stage_추론및ZIP생성.ipynb"
-STAGE1_SNIPPET = ROOT / "src" / "train" / "predict_stage1_synth.py"
+STAGE1_SNIPPET = _args.stage1_snippet or (ROOT / "src" / "train" / "predict_stage1_synth.py")
 STAGE3_SNIPPET = _args.stage3_snippet or (ROOT / "src" / "train" / "predict_stage3_comma2k19.py")
 
 
@@ -39,7 +41,8 @@ def build_inference() -> Path:
         raise RuntimeError(f"공식 추론 노트북 셀 개수가 예상과 다릅니다: {len(parts)}")
     common, official_stage1, stage2, _official_stage3 = parts
     stage1_src = official_stage1 if _args.stage1_mode == "baseline" else STAGE1_SNIPPET.read_text(encoding="utf-8")
-    source = "\n\n".join(p.rstrip() for p in [common, stage1_src, stage2, STAGE3_SNIPPET.read_text(encoding="utf-8")]) + "\n"
+    stage2_src = _args.stage2_snippet.read_text(encoding="utf-8") if _args.stage2_snippet is not None else stage2
+    source = "\n\n".join(p.rstrip() for p in [common, stage1_src, stage2_src, STAGE3_SNIPPET.read_text(encoding="utf-8")]) + "\n"
     tree = ast.parse(source, filename="inference.py")
     defined = {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
     missing = sorted({"predict_stage1", "predict_stage2", "predict_stage3"} - defined)
