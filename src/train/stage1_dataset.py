@@ -1,16 +1,18 @@
 """Stage1(재녹화 판별) 학습 데이터셋.
 
-manifest(src.data.stage1.extract_frames 출력)의 ORIGINAL 프레임 하나가 두 개의 학습 샘플이
-된다 — 그대로(ORIGINAL=0)와 synth_rerecord를 즉석 적용한 것(RERECORDED=1). 같은 소스가 양쪽
-클래스에 모두 등장하므로 모델이 "장면 내용"이 아니라 "재촬영 흔적"으로만 구분하도록 강제된다.
+manifest(src.data.stage1.extract_frames 출력)의 각 행이 학습 샘플이 된다:
+  - label==ORIGINAL 행 -> (그대로, 0) 과 (synth_rerecord 즉석 합성, 1) 두 샘플.
+    같은 소스가 양쪽 클래스에 모두 등장하므로 모델은 장면 내용이 아니라 재촬영 흔적만으로
+    구분하도록 강제된다.
+  - label==RERECORDED 행(공식 DACON식 실제 재녹화) -> (그대로, 1) 한 샘플.
+    EXP-S1-SYNTH-001~004에서 합성만으로는 DACON 실제 흔적을 재현하지 못해 실제 쌍을
+    학습에 포함한다(`official_repeat`로 오버샘플링).
 
-크롭은 원본 해상도에서 224x224를 랜덤으로 잘라낸다(재압축 블록/모아레 같은 고주파 단서를
-축소로 뭉개지 않기 위해). 평가 영상 해상도가 다를 수 있어 양쪽 클래스에 동일하게 랜덤
-스케일(0.6~1.2배)을 먼저 적용한다.
+크롭은 원본 해상도에서 224x224 랜덤(고주파 단서 보존). 평가 해상도가 다를 수 있어 양쪽
+클래스에 동일하게 랜덤 스케일(0.6~1.2)을 먼저 적용한다. '블랙박스 품질' 기저 열화는
+합성 소스(comma/OPEN)에는 항상, 이미 그 품질인 공식 프레임에는 30%만 적용한다.
 """
 from __future__ import annotations
-
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -18,7 +20,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-from src.data.stage1.synth_rerecord import apply_rerecord, sample_params
+from src.data.stage1.synth_rerecord import apply_base, apply_rerecord, sample_base_params, sample_params
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
@@ -59,30 +61,40 @@ def grid_crops(rgb: np.ndarray, size: int = CROP, n: int = 5) -> list[np.ndarray
 
 
 class Stage1TrainDataset(Dataset):
-    def __init__(self, manifest: pd.DataFrame, seed: int = 20260825, scale_range=(0.6, 1.2)):
-        self.rows = manifest.reset_index(drop=True)
+    def __init__(self, manifest: pd.DataFrame, seed: int = 20260825, scale_range=(0.6, 1.2), official_repeat: int = 3):
         self.seed = seed
         self.scale_range = scale_range
         self.epoch = 0
+        items = []  # (frame_path, is_official, label, synth)
+        for row in manifest.itertuples(index=False):
+            official = row.domain == "official_stage1"
+            rep = official_repeat if official else 1
+            for _ in range(rep):
+                if row.label == "ORIGINAL":
+                    items.append((row.frame_path, official, 0, False))
+                    items.append((row.frame_path, official, 1, True))
+                else:
+                    items.append((row.frame_path, official, 1, False))
+        self.items = items
 
     def set_epoch(self, epoch: int) -> None:
         self.epoch = epoch
 
     def __len__(self) -> int:
-        return len(self.rows) * 2
+        return len(self.items)
 
     def __getitem__(self, index: int):
-        row = self.rows.iloc[index // 2]
-        label = index % 2  # 0=ORIGINAL, 1=RERECORDED (같은 프레임이 두 클래스로 모두 등장)
+        frame_path, official, label, synth = self.items[index]
         rng = np.random.default_rng([self.seed, self.epoch, index])
-        bgr = cv2.imread(row["frame_path"], cv2.IMREAD_COLOR)
-        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        rgb = cv2.cvtColor(cv2.imread(frame_path, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
 
         s = float(rng.uniform(*self.scale_range))
         if abs(s - 1.0) > 0.02:
             rgb = cv2.resize(rgb, (max(CROP, int(rgb.shape[1] * s)), max(CROP, int(rgb.shape[0] * s))), interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR)
 
-        if label == 1:
+        if (not official) or rng.random() < 0.3:
+            rgb = apply_base(rgb, sample_base_params(rng))
+        if synth:
             rgb = apply_rerecord(rgb, sample_params(rng), rng)
 
         crop = random_crop(rgb, rng)
@@ -92,8 +104,6 @@ class Stage1TrainDataset(Dataset):
 
 
 class Stage1EvalFrames:
-    """검증용: 프레임 경로 목록 -> (source_id, crops tensor). RERECORDED 합성 여부는 호출자가 결정."""
-
     @staticmethod
     def crops_for_frame(rgb: np.ndarray) -> torch.Tensor:
         return torch.stack([to_tensor(np.ascontiguousarray(c)) for c in grid_crops(rgb)])

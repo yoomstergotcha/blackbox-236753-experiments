@@ -80,6 +80,18 @@ def predict_stage1(data_dir, model_dir):
     model.load_state_dict(torch.load(Path(model_dir) / "best.pt", map_location="cpu", weights_only=False))
     model.to(device).eval()
 
+    # 임계값은 학습 시 공개 라벨(공식 5쌍)로 보정한 값을 쓴다(없으면 0.5). 평가 영상 간 통계는
+    # 일절 쓰지 않는다 — 영상마다 독립적으로 이 고정 임계값과 비교할 뿐이다.
+    threshold = 0.5
+    thr_path = Path(model_dir) / "threshold.json"
+    if thr_path.is_file():
+        try:
+            import json as _json
+
+            threshold = float(_json.loads(thr_path.read_text(encoding="utf-8")).get("threshold", 0.5))
+        except Exception:
+            threshold = 0.5
+
     rows = []
     with torch.inference_mode():
         for path in _video_paths(Path(data_dir) / "videos"):
@@ -94,7 +106,7 @@ def predict_stage1(data_dir, model_dir):
                 p = float(np.mean(probs)) if probs else 0.0
             except Exception:
                 p = 0.0  # 디코딩 실패 시 다수 클래스(ORIGINAL)로 안전 처리
-            rows.append({"ID": path.stem, "answer": "RERECORDED" if p >= 0.5 else "ORIGINAL"})
+            rows.append({"ID": path.stem, "answer": "RERECORDED" if p >= threshold else "ORIGINAL"})
     del model
     torch.cuda.empty_cache()
     return pd.DataFrame(rows, columns=["ID", "answer"])

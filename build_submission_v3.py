@@ -53,6 +53,9 @@ def stage_model_files() -> Path:
         raise FileNotFoundError(f"{STAGE1_CHECKPOINT} 없음 - train_stage1을 먼저 실행하세요")
     (model_dir / "stage1").mkdir(parents=True)
     shutil.copy2(STAGE1_CHECKPOINT, model_dir / "stage1" / "best.pt")
+    thr = STAGE1_CHECKPOINT.parent / "threshold.json"
+    if thr.is_file():
+        shutil.copy2(thr, model_dir / "stage1" / "threshold.json")
     print("모델 파일 준비 완료:", model_dir)
     return model_dir
 
