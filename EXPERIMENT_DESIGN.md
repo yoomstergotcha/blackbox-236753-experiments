@@ -721,3 +721,42 @@ LOPO out-of-fold (10 영상):  macro-F1 = 1.0,  AUC = 1.0
 - `submit_v5a.zip`: Stage1 baseline + Stage2 baseline + **Stage3 CLASS-001** — v4가 실패(S1≈0.40)했을 때 올린다. 직전 유효 제출(v2) 대비 Stage3만 변경.
 - `submit_v5b.zip`: Stage1 v4 모델 + Stage2 baseline + **Stage3 CLASS-001** — v4가 성공(S1≥0.6)했을 때 올린다. v4 대비 Stage3만 변경.
 - 기대: LB Stage3 0.370 → 0.45~0.55 (로컬 official-label 개선 비율 0.584→0.743 ≈ +27%를 보수적으로 적용).
+
+## 17. `EXP-S3-MOTION-001` — optical-flow ego-motion 특징 (Stage3 accel 병목 해소)
+
+### Objective / Bottleneck
+Stage3 accel_f1이 내부 val 0.56에서 정체(CLASS-001). frozen ImageNet ResNet18 프레임 특징의 평균은 '장면이 무엇인가'만 담고 '카메라가 어떻게 움직이는가'는 거의 담지 못한다 — 가감속/조향은 본질적으로 ego-motion.
+
+### Hypothesis / Single Change
+Farneback dense optical flow(160×120 gray, stride 1)에서 프레임당 13개 요약 특징(흐름 크기·수평/수직 평균·방사 팽창률(div)·좌/우·상/하 분해·정지 비율·프레임 차)을 뽑아 16프레임 윈도우의 mean/std/delta(39-d)를 head 입력에 concat. 대조군 = 같은 split/seed에 `--fps-aug`만 추가(FPSAUG-001).
+
+### 사전 분석 (학습 전 특징 검증, `src/train/stage3_motion.py`)
+- 83세그먼트 48,811샘플: u_mean vs 조향각(+=LEFT) 상관 +0.28 (STEER_SIGN과 부호 일치), div vs 속도 +0.28, 정지 구간 흐름 크기 중앙값 0.066 vs 주행 0.58.
+- 그러나 16프레임 delta vs CAN 가속도 상관 0.04–0.06 — ±0.3 m/s²는 0.8s에 속도 1.6% 변화라 짧은 윈도우에선 보이지 않음.
+- 깊이 스케일에 불변인 log-ratio(뒤 H프레임 평균 / 앞 H프레임 평균)로 바꾸면 div 기준 H=16 0.15 → 32 0.24 → 64 0.34(3.2s) → 128 이상에서도 상승. **가속 정보는 긴 지평에 있다** → 지평 16/32/64/128의 log-ratio(mag_mean/div/mag_bottom/mag_top)와 static_frac 차이 20-d를 추가(59-d).
+
+### fps 문제
+공개 OPEN/comma2k19는 20fps, 비공개 Stage3는 10fps인데 컨테이너 fps(CAP_PROP_FPS=479.78)는 못 믿는다. 흐름 크기는 fps에 반비례하므로 학습을 두 fps에 노출: 캐시에 stride-2 흐름도 저장하고, 짝수 프레임+stride-2로 10fps를 시뮬레이션한 복제본을 학습에 추가(`--fps-aug`), val은 native/sim10 둘 다 보고하고 평균으로 best 선택.
+
+### Result (내부 val 63seg/8route 37,771샘플 | official OPEN 50행)
+
+| 실험 | 입력 | val native | val sim10 | official 20fps | official 10fps-sim |
+|---|---|---|---|---|---|
+| CLASS-001 (제출5) | 512 | 0.566 | – | 0.743 | 0.756 |
+| FPSAUG-001 (대조군) | 512 | 0.571 | 0.584 | 0.766 | 0.735 |
+| MOTION-001a | 512+39 | 0.630 | 0.645 | 0.793 | 0.765 |
+| **MOTION-001b** | **512+59** | **0.655** (accel 0.667, steer 0.626) | **0.665** | 0.768 | 0.765 |
+| MOTION-001c (motion만) | 59 | 0.588 | 0.599 | 0.725 | 0.673 |
+
+### Self-Critique
+- 내부 val +0.084는 8route 37k샘플이라 신뢰할 만하고 native/sim10에서 일관. official(N=50)은 1행=0.02라 001a/001b를 구분 못 하며, 20fps-native에선 001a가 더 높게 나왔다(노이즈로 판단, 001b 선택 근거는 내부 val).
+- 흐름 특징은 해상도/코덱/노출에 민감할 수 있다. 공식 Stage3 샘플이 comma2k19 규격(1164×874)임을 확인했으므로 비공개도 같을 가능성이 높지만, 다른 카메라라면 표준화(학습셋 mean/std)가 어긋날 수 있음 — LB로 확인.
+- motion만(001c)은 steer 0.50으로 급락 → appearance가 조향의 맥락(차선/도로 형상)을 제공. 둘 다 필요.
+- 추론 시간 8.0s/영상(1200프레임; flow는 CPU 단일 스레드). 비공개 영상 수를 모르지만 기존 13분 예산에 여유가 크다.
+
+### Decision
+MOTION-001b 채택 → **제출 후보 6**(`submit_v6.zip`, Stage1 v4·Stage2 baseline 유지, Stage3만 변경). snippet(`src/train/predict_stage3_motion.py`)이 캐시 경로와 5,992행 100% 일치함을 확인.
+
+### Next
+- 지평을 더 늘리거나(256) 방향별 흐름 히스토그램 추가, `mag`의 절대값 대신 로그 스케일 입력 — 1-2회 head 실험(각 1분).
+- 비공개 10fps에서 1200프레임=120s? 영상 길이가 다르면 지평 프레임 수의 시간 의미가 달라진다 — LB 결과와 함께 재검토.

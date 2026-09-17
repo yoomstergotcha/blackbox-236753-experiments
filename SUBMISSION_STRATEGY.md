@@ -93,8 +93,15 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - 기대: LB S3 0.370 → 0.45~0.55.
 - **결정 (2026-09-17 20:40): `submit_v5b.zip` 제출** — v4 Stage1(0.4237)이 baseline(0.4046)보다 높으므로 v5b가 v5a를 지배. v4 대비 Stage3만 변경이라 S3 델타 그대로 귀속. 오늘 3번째 슬롯.
 
+### 제출 6: Stage3 = appearance + optical-flow ego-motion (EXP-S3-MOTION-001b) — **빌드 중**
+
+- 가설: accel 병목은 frozen ResNet 특징이 카메라 움직임을 못 담아서. Farneback 광류 요약 13-d × (16프레임 mean/std/delta + 지평 16/32/64/128 log-ratio) = 59-d를 head에 concat. 10fps 비공개 대비로 학습에 10fps 시뮬레이션 복제(`--fps-aug`).
+- 내부 val 0.571(대조군) → **0.655** (accel 0.561→0.667, steer 0.593→0.626), official 10fps-sim 0.735→0.765. 상세 [EXPERIMENT_DESIGN.md §17](EXPERIMENT_DESIGN.md).
+- `submit_v6.zip`: Stage1 = v4 모델(제출 4/5b와 동일), Stage2 = baseline, Stage3만 변경 → v5b 대비 S3 델타만 귀속.
+- 기대: LB S3 0.37 → (v5b 결과 × 1.05~1.15). v5b LB가 나오면 v6 예측치를 갱신.
+
 ### 그 다음 (예정)
-- Stage3: accel_f1이 병목(0.56 내부 val) — optical-flow/ego-motion 특징(가이드 §9), 차이 벡터 기반 temporal 변형, backbone 부분 unfreeze.
+- Stage3: ego-motion 특징으로 accel 0.56→0.67. 다음: 지평 확장/흐름 방향 히스토그램(head 실험 각 1분), backbone 부분 unfreeze, Stage2 착수.
 - Stage1: 보류(v4 0.4237). 재개 조건: 비공개 재녹화 외형에 대한 새 가설(예: 코덱/해상도/fps 재인코딩, 프레임 중복·깜빡임 등 시간축 흔적)이 생겼을 때 1슬롯 프로브.
 
 ### 이후 — Stage2 착수
