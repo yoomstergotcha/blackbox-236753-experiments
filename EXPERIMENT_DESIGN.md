@@ -558,3 +558,57 @@ STOPPED/LEFT 샘플이 실제로 포함된 다른 route의 **영상**이 필요�
 
 ### 추천안
 A(Chunk 1개 다운로드)를 권장한다 — 지금 데이터로는 어떤 추가 실험도 기대효용이 0이라는 게 이미 confusion matrix로 확인됐고, C는 성공 여부가 불확실한데 반해 A는 확실하게 문제를 해결한다. 다만 9GB는 이번 세션에서 다뤄온 다른 다운로드보다 훨씬 크므로, 진행 여부는 사람이 결정하는 것이 맞다.
+
+---
+
+## 14. Stage 3 실제 학습 결과 요약 + 첫 LB 결과 (2026-09-15 ~ 09-17)
+
+§13 이후 사용자가 Chunk_1(8.7GB) 다운로드를 승인해 진행한 내용의 요약. 실험별 상세는 [experiments/experiment_log.csv](experiments/experiment_log.csv), 제출 전략은 [SUBMISSION_STRATEGY.md](SUBMISSION_STRATEGY.md).
+
+| 실험 | 변경 | val_stage3_score(공식 채점식) | 판정 |
+|---|---|---|---|
+| EXP-S3-BASE-002 | MViT scratch, lr 1e-4, Chunk_1 47seg/13route | steer 3 epoch 내내 100% STRAIGHT, accel 0.682→0.611 퇴행 | DROP |
+| EXP-S3-BASE-003 | lr만 2e-5 | 동일 패턴 — lr 문제가 아님 | DROP |
+| EXP-S3-BASE-004/005 | **아키텍처 교체**: ImageNet ResNet18(frozen)+MLP head(13만 파라미터), best-by-macro-F1 저장 | **0.518** (epoch 12; accel_f1 0.571, steer_f1 0.394) | KEEP |
+
+교훈 두 가지: (1) 4000 sample이 실제론 47 segment/13 route라 대형 video transformer를 scratch로 학습하기엔 데이터가 부족했다 — 모델 용량을 데이터 규모에 맞추는 게 답이었다. (2) **accuracy는 majority-class collapse를 못 걸러낸다** — steer 100% STRAIGHT가 accuracy 0.658인데 macro-F1은 0.26. 그 뒤로 학습 루프가 매 epoch `src/eval/metrics.py`의 공식 채점식을 계산하고 best checkpoint를 그 기준으로 저장한다.
+
+### 첫 LB 결과 (2026-09-16 제출, 09-17 확인)
+
+| 제출 | Stage1 | Stage2 | Stage3 | Total(0.2/0.4/0.4) | 서버 시간 |
+|---|---|---|---|---|---|
+| #91244 `submit.zip` (공식 baseline) | 0.40456 | 0.13129 | 0.10721 | 0.1763 | 14분 19초 |
+| #91246 `submit_v2.zip` (Stage3만 교체) | 0.40456 | 0.13129 | **0.37034** | **0.2816** | 11분 46초 |
+| 1등 | 0.95145 | 0.54346 | 0.75456 | 0.7095 | — |
+
+- Stage1/2 점수가 소수점 10자리까지 동일 → LB 열 순서가 Stage1/2/3임을 확인. 현재 231등.
+- Stage3 0.107→0.370(3.45배)은 로컬 official-label 비교(0.140→0.409)와 방향·규모가 일치한다 → **로컬 검증 파이프라인이 LB를 잘 예측한다.**
+- Stage1 0.4046은 "전부 ORIGINAL 예측" 시 macro-F1 `p/(1+p)`와 정확히 맞는다(역산하면 테스트셋 ORIGINAL 비율 ≈ 68%). 즉 Stage1 baseline은 degenerate.
+- 1등 대비 가중 갭: **S1 0.109 / S2 0.165 / S3 0.154.** 갭 자체는 S2가 최대지만 S2는 라벨 없는 3개 항목이 65%라 비용이 가장 크다. S1은 degenerate 상태에서 출발하고 외부 데이터 없이 자체 합성이 가능해 **기대효용/비용이 가장 좋다** → 다음 실험은 Stage1.
+- 런타임 12~14분/60분 → 무거운 모델을 써도 여유가 크다.
+
+### 부수 발견 — 공식 Stage3 샘플은 comma2k19 계열 영상이다
+
+`data/stage3/videos/OPEN_00*.mp4`는 **1164×874, 1200프레임(60초@20fps)** — comma2k19 EON 카메라 규격과 정확히 같다. comma2k19 학습 모델이 official Stage3 라벨/LB에서 잘 일반화된 이유가 이것이다. 비공개 Stage3 평가셋도 같은 계열일 가능성이 높으므로, **comma2k19 데이터를 더 쓰는 것(Chunk 추가, 전체 세그먼트 사용, backbone unfreeze)이 Stage3에서 가장 직접적인 다음 이득**이다.
+
+### 공식 Stage1 RERECORDED 샘플 실측
+
+`data/stage1/rerecorded/*.mp4` 5건: 해상도(1280×720)·fps(10)·프레임수(50)·프레이밍 모두 원본과 동일. 차이는 **강한 재압축(블록 노이즈)뿐** — 라플라시안 분산이 원본 대비 2~3배(예: 000005: 110.7→247.4), 파일 크기 ~2배. 즉 DACON의 공개 예제는 "재촬영 시뮬레이션 = 저품질 재인코딩"이다. 비공개 평가셋은 실제 재촬영(베젤·모아레·반사광·원근·흔들림)을 포함할 수 있어(가이드 §2.2~2.3), 합성 파이프라인은 둘 다 커버하도록 설계했다(§15).
+
+---
+
+## 15. `EXP-S1-SYNTH-001` — 합성 재녹화로 Stage1 학습
+
+### Objective / Bottleneck
+Stage1 baseline이 degenerate(all-ORIGINAL, LB 0.4046). 가중치 0.2라도 0.40→0.8이면 total +0.08 — 현재 가장 싼 큰 이득.
+
+### Hypothesis
+재녹화 흔적(재압축 블록, 모아레/스캔라인, 색·감마 변화, 반사광, 베젤, 원근, 흔들림, 해상도 저하)은 장면 내용과 무관한 **텍스처 단서**다. 같은 원본 프레임을 (원본, 합성 재녹화) 쌍으로 만들어 학습하면 모델은 내용이 아니라 흔적만으로 구분하도록 강제되고, 이는 실제 재촬영에도 일반화될 것이다.
+
+### Single Change
+Stage1만 교체. 데이터: comma2k19 59세그먼트×10프레임 + OPEN 5개×20프레임(ORIGINAL 소스, 무손실 PNG). RERECORDED는 `src/data/stage1/synth_rerecord.py`로 즉석 합성(영상 단위 파라미터 고정, 프레임마다 흔들림·노이즈·JPEG만 변화). 모델: ImageNet ResNet18 전체 fine-tune, fc→1 logit BCE, 원본 해상도 224 랜덤 크롭(고주파 단서 보존) + 양 클래스 공통 랜덤 스케일 0.6~1.2.
+검증(그룹 단위): (a) 공식 5쌍(실제 ORIGINAL + DACON식 RERECORDED) 영상 단위 macro-F1, (b) comma2k19 route 3개 hold-out(원본 실제 + 합성 재녹화). 채점 단위와 같은 영상 단위(프레임 5크롭 평균→프레임 평균→0.5). best = (a)+(b) 평균.
+추론(`src/train/predict_stage1_synth.py`): 영상당 균등 8프레임×5크롭=40장, 원본 해상도, sigmoid 평균.
+
+### Result
+(학습 진행 중 — 완료 후 기록)

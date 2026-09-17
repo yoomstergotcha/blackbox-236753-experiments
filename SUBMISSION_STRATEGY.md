@@ -60,12 +60,27 @@ Stage3 = 0.7×accel_macroF1 + 0.3×steer_macroF1
 - **도메인 시프트 리스크는 우려보다 작았다** — comma2k19(정상 주행)로 학습했지만 official 사고영상 라벨에서도 개선을 보임. N=50이라 확정적이진 않지만 방향은 뚜렷함.
 - **사용자 액션 필요**: `submit_v2.zip`을 dacon.io에 업로드 (제출 1과 별도 슬롯 — 오늘 3회 중 아직 안 씀).
 
-### Day 2~3 — 제출 3: + Stage1 synthetic augmentation
+### LB 결과 (2026-09-17 확인) — 두 제출 모두 정상 채점
 
-- Stage1 재녹화 시뮬레이션 파이프라인(디스플레이 베젤, 모아레, 재압축, 원근왜곡) 구축 → 재학습 → baseline과 비교.
-- Stage2/3는 제출 2 상태 유지.
+| 제출 | S1 | S2 | S3 | Total | 서버 시간 |
+|---|---|---|---|---|---|
+| #91244 submit.zip | 0.40456 | 0.13129 | 0.10721 | 0.1763 | 14:19 |
+| #91246 submit_v2.zip | 0.40456 | 0.13129 | **0.37034** | **0.2816** (231등) | 11:46 |
+| 1등 | 0.95145 | 0.54346 | 0.75456 | 0.7095 | |
 
-### Day 3 이후 — Stage2 착수
+Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-label 검증을 믿고 슬롯을 써도 된다. 1등 대비 가중 갭 S1 0.109 / S2 0.165 / S3 0.154. **우선순위 재조정: Stage1(degenerate, 자체 합성으로 해결 가능, 가장 싼 큰 이득) → Stage3 확장(공식 Stage3 샘플이 comma2k19 규격임을 확인, 데이터 추가가 직접 효과) → Stage2.** 상세: [EXPERIMENT_DESIGN.md §14](EXPERIMENT_DESIGN.md).
+
+### 제출 3: Stage1만 합성 재녹화 모델로 교체 — 진행 중 (2026-09-17)
+
+- `EXP-S1-SYNTH-001`: comma2k19+OPEN 원본 프레임에 재녹화 시뮬레이션(재압축·모아레·스캔라인·색 변화·반사광·베젤·원근·흔들림·해상도 저하)을 즉석 합성해 ResNet18 fine-tune. 검증은 공식 5쌍(DACON식 실제 재녹화) + comma route hold-out, 영상 단위 macro-F1.
+- `build_submission_v3.py` → `submit_v3.zip` (Stage2 baseline, Stage3 = 제출 2와 동일).
+- 기대: S1 0.40 → 0.7~0.9 (total +0.06~0.10). 리스크: 비공개 재녹화 방식이 합성과 다를 수 있음 — 그래도 all-ORIGINAL보다 나쁘긴 어렵다(0.4046 이하로 떨어지려면 학습된 모델이 무작위보다 못해야 함).
+
+### 제출 4 (예정): Stage3 확장 — comma2k19 데이터 추가 + backbone unfreeze
+
+- 공식 Stage3 샘플 = comma2k19 규격이므로 Chunk 추가(또는 Chunk_1 전체 200세그먼트 사용)와 backbone 일부 unfreeze가 직접 효과를 낼 가능성이 높다. 런타임 여유(12분/60분)도 충분.
+
+### 이후 — Stage2 착수
 
 - entry_frame/evasion_space/entry_side용 데이터 소싱(사고 영상 데이터셋 재조사, 또는 공개 5건 직접 라벨링으로 최소 검증셋 확보) — 가장 오래 걸리는 트랙이라 병렬로 조사 시작.
 
