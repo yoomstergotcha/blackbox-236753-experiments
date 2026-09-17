@@ -757,6 +757,12 @@ Farneback dense optical flow(160×120 gray, stride 1)에서 프레임당 13개 �
 ### Decision
 MOTION-001b 채택 → **제출 후보 6**(`submit_v6.zip`, Stage1 v4·Stage2 baseline 유지, Stage3만 변경). snippet(`src/train/predict_stage3_motion.py`)이 캐시 경로와 5,992행 100% 일치함을 확인.
 
+### 후속 (같은 날) — 지평 확장 DROP, 시간축 smoothing KEEP
+- `MOTION-002a`(지평 +256) select 0.6597, `MOTION-002b`(32~512) 0.6596 vs 001b 0.6599 → 지평 128 이상은 정보 없음, 001b 유지.
+- 진단(001b 내부 val 혼동행렬): STOP F1 0.94, CON 0.80, ACC 0.46, DEC 0.48 — ACC/DEC↔CON 경계(±0.3 m/s²) 혼동이 손실의 대부분, ACC↔DEC 부호 혼동은 적음. steer는 LEFT 0.52 / STR 0.78 / RIGHT 0.59로 LEFT↔STR 혼동. 세그먼트별 accel macro-F1 분산이 큼(0.21~0.84).
+- `SMOOTH-001`: 라벨 구간이 수 초 단위인데 예측은 프레임별로 flicker → 영상 내에서 logit을 프레임 축 이동평균 후 argmax(파일 간 통계 없음). 내부 val(10Hz 행 폭) w=1 0.655/0.665(native/sim10) → w=21 0.672/0.675 → w=31 0.676/0.677 → w=41 0.678/0.677 → w=61 0.675/0.676: 2~4초 plateau. 추론 폭 31프레임(10fps 3.1s, 20fps 1.55s — 둘 다 plateau 안). official: native 0.768(불변), 10fps-sim 0.765 → **0.794**(accel 0.833).
+- 제출 후보 6 = MOTION-001b + smooth31 로 재빌드(snippet–캐시 경로 5,992행 100% 일치 재확인, 9.2s/영상).
+
 ### Next
-- 지평을 더 늘리거나(256) 방향별 흐름 히스토그램 추가, `mag`의 절대값 대신 로그 스케일 입력 — 1-2회 head 실험(각 1분).
+- ACC/DEC↔CON 경계: 프레임별 head 대신 특징 시퀀스 위 1D temporal conv(수 초 문맥을 학습으로 통합) — 캐시 특징으로 수 분 실험. 방향별 흐름 히스토그램, 로그 스케일 입력은 후순위.
 - 비공개 10fps에서 1200프레임=120s? 영상 길이가 다르면 지평 프레임 수의 시간 의미가 달라진다 — LB 결과와 함께 재검토.

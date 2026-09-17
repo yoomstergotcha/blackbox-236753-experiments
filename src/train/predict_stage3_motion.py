@@ -23,6 +23,7 @@ _MOTION_W, _MOTION_H = 160, 120
 _MOTION_DIM = 13
 _LOGRATIO_IDX = [0, 3, 9, 10]  # mag_mean, div, mag_bottom, mag_top
 _DIFF_IDX = [11]  # static_frac
+_SMOOTH_FRAMES = 31  # 영상 내 logit 이동평균 폭(프레임). 라벨 구간이 수 초 단위라 프레임별 flicker 제거 (EXP-S3-SMOOTH-001)
 _IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
 _IMAGENET_STD = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
 
@@ -132,6 +133,16 @@ def _motion_clip_features(m: np.ndarray, frame_idx: np.ndarray, horizons) -> np.
     return np.concatenate(extras, 1)
 
 
+def _smooth_logits(logits: np.ndarray, w: int = _SMOOTH_FRAMES) -> np.ndarray:
+    """(N, C) logit을 프레임 축으로 폭 w 중심 이동평균(가장자리는 edge pad). 한 영상 안에서만 — 파일 간 통계 없음."""
+    if w <= 1 or len(logits) < 2:
+        return logits
+    pad = w // 2
+    lp = np.pad(logits, ((pad, pad), (0, 0)), mode="edge")
+    k = np.ones(w, dtype=np.float64) / w
+    return np.stack([np.convolve(lp[:, j], k, mode="valid") for j in range(logits.shape[1])], 1)
+
+
 def _clip_features(feats: np.ndarray, frame_idx: np.ndarray) -> np.ndarray:
     n = len(feats)
     out = np.empty((len(frame_idx), feats.shape[1]), dtype=np.float32)
@@ -179,8 +190,8 @@ def predict_stage3(data_dir, model_dir):
             parts.append(((_motion_clip_features(motion, frame_idx, horizons) - m_mean) / m_std).astype(np.float32))
             x = torch.from_numpy(np.concatenate(parts, 1)).to(device)
             accel_logits, steer_logits = model.heads(x)
-            accel_idx = accel_logits.float().argmax(1).cpu().tolist()
-            steer_idx = steer_logits.float().argmax(1).cpu().tolist()
+            accel_idx = _smooth_logits(accel_logits.float().cpu().numpy()).argmax(1).tolist()
+            steer_idx = _smooth_logits(steer_logits.float().cpu().numpy()).argmax(1).tolist()
             for sample_index, a, s in zip(frame_idx.tolist(), accel_idx, steer_idx):
                 rows.append({"ID": path.stem, "sample_index": sample_index, "accel_label": _ACCEL_LABELS[a], "steer_label": _STEER_LABELS[s]})
     del model

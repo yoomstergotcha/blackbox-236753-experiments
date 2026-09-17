@@ -33,7 +33,16 @@ def _head(state: dict, prefix: str, out: int) -> nn.Sequential:
     return h.eval()
 
 
-def predict_from_cache(ckpt: Path, feat_dir: Path, motion_dir: Path | None, ids: list[str], sim10: bool) -> pd.DataFrame:
+def smooth_logits(logits: np.ndarray, w: int) -> np.ndarray:
+    if w <= 1 or len(logits) < 2:
+        return logits
+    pad = w // 2
+    lp = np.pad(logits, ((pad, pad), (0, 0)), mode="edge")
+    k = np.ones(w, dtype=np.float64) / w
+    return np.stack([np.convolve(lp[:, j], k, mode="valid") for j in range(logits.shape[1])], 1)
+
+
+def predict_from_cache(ckpt: Path, feat_dir: Path, motion_dir: Path | None, ids: list[str], sim10: bool, smooth: int = 1) -> pd.DataFrame:
     state = torch.load(ckpt, map_location="cpu", weights_only=False)
     head_a, head_s = _head(state, "accel", 4), _head(state, "steer", 3)
     has_motion = "motion_mean" in state
@@ -60,7 +69,8 @@ def predict_from_cache(ckpt: Path, feat_dir: Path, motion_dir: Path | None, ids:
             parts.append(z.astype(np.float32))
         x = torch.from_numpy(np.concatenate(parts, 1))
         with torch.inference_mode():
-            pa, ps = head_a(x).argmax(1).numpy(), head_s(x).argmax(1).numpy()
+            la, ls = head_a(x).numpy(), head_s(x).numpy()
+        pa, ps = smooth_logits(la, smooth).argmax(1), smooth_logits(ls, smooth).argmax(1)
         rows.append(pd.DataFrame({"ID": vid, "frame": fi, "accel_label": [ACCEL[i] for i in pa], "steer_label": [STEER[i] for i in ps]}))
     return pd.concat(rows, ignore_index=True)
 
@@ -72,16 +82,17 @@ def main() -> None:
     ap.add_argument("--motion", type=Path, default=None)
     ap.add_argument("--labels", type=Path, default=Path("data/stage3/labels.csv"))
     ap.add_argument("--sim10", action="store_true")
+    ap.add_argument("--smooth", type=int, default=1, help="영상 내 logit 이동평균 폭(프레임, 1=없음)")
     args = ap.parse_args()
     gt = pd.read_csv(args.labels)
     ids = sorted(gt["ID"].unique())
-    pred = predict_from_cache(args.ckpt, args.features, args.motion, ids, args.sim10)
+    pred = predict_from_cache(args.ckpt, args.features, args.motion, ids, args.sim10, args.smooth)
     key = gt["frame_index"] // 2 if args.sim10 else gt["frame_index"]
     merged = gt[["ID", "sample_index"]].assign(frame=key).merge(pred, on=["ID", "frame"], how="left")
     assert merged["accel_label"].notna().all(), "라벨 프레임에 대응하는 예측이 없음"
     sub = merged[["ID", "sample_index", "accel_label", "steer_label"]]
     res = score_stage3(sub, gt[["ID", "sample_index", "accel_label", "steer_label"]])
-    mode = "10fps-sim" if args.sim10 else "20fps-native"
+    mode = ("10fps-sim" if args.sim10 else "20fps-native") + (f"+smooth{args.smooth}" if args.smooth > 1 else "")
     print(f"{args.ckpt} [{mode}] -> {res}")
     for col in ("accel_label", "steer_label"):
         print(f"  {col} pred dist:", sub[col].value_counts().to_dict(), "| gt:", gt[col].value_counts().to_dict())
