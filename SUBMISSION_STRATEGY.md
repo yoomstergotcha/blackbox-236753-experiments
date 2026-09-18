@@ -68,7 +68,12 @@ Stage3 = 0.7×accel_macroF1 + 0.3×steer_macroF1
 | #91246 submit_v2.zip | 0.40456 | 0.13129 | **0.37034** | **0.2816** (231등) | 11:46 |
 | submit_v3.zip (Stage1 005) | 0.40076 | 0.13129 | 0.37034 | 0.2809 | 13:30 |
 | submit_v4.zip (Stage1 v4 프로브) | **0.42366** | 0.13129 | 0.37034 | **0.2854** | 13:56 |
-| 1등 | 0.95145 | 0.54346 | 0.75456 | 0.7095 | |
+| submit_v5b.zip (Stage3 CLASS-001) | 0.42366 | 0.13129 | **0.22468** | 0.2371 | 14:16 |
+| submit_v6.zip (Stage3 MOTION+smooth) | 0.42366 | 0.13129 | 0.35539 | 0.2794 | 13:19 |
+| submit_v7.zip (Stage1 서명 규칙) | **0.39303** | 0.13129 | 0.35539 | 0.2734 | 13:41 |
+| submit_v8.zip (Stage2 휴리스틱) | 0.42366 | **0.24988** | 0.35539 | **0.3268** | 13:01 |
+| 1등 (2026-09-18) | 0.9699 | 0.64 | 0.7823 | 0.7629 | |
+| 1등 (2026-09-17) | 0.95145 | 0.54346 | 0.75456 | 0.7095 | |
 
 Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-label 검증을 믿고 슬롯을 써도 된다. 1등 대비 가중 갭 S1 0.109 / S2 0.165 / S3 0.154. **우선순위 재조정: Stage1(degenerate, 자체 합성으로 해결 가능, 가장 싼 큰 이득) → Stage3 확장(공식 Stage3 샘플이 comma2k19 규격임을 확인, 데이터 추가가 직접 효과) → Stage2.** 상세: [EXPERIMENT_DESIGN.md §14](EXPERIMENT_DESIGN.md).
 
@@ -143,3 +148,10 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - 합치기: Windows `copy /b submit_v4.zip.part* submit_v4.zip` / macOS·Linux `cat submit_v4.zip.part* > submit_v4.zip`, 이후 MD5 대조.
 - 제출 순서: v4 먼저 → S1 ≈ 0.40이면 v5a, S1 ≥ 0.6이면 v5b (§ 제출 4·5).
 - 부수 수정: 실수로 커밋됐던 `data/external/comma2k19_multi/`(14GB, 11,400파일)를 미푸시 커밋 2개에서 제거하고 `.gitignore`에 추가(원본은 dataset_registry.csv 출처에서 재획득 가능).
+
+### LB 결과 (2026-09-18 00:13) — 제출 5b/6/7/8
+
+- **Stage3 역상관**: candidate2(v2) 0.370 > MOTION+smooth(v6) 0.355 > CLASS-001(v5b) 0.225. 로컬(내부 val / official 50행)은 정반대 순서. v5b는 전부 CONSTANT/STRAIGHT 예측 수준(0.219)에 근접 → 비공개에서 무정보. 공통 의심: class weight(소수 클래스 과예측: official 50행에서도 LEFT+RIGHT 24 vs 정답 11), comma2k19 과적합(도메인/라벨 임계값 차이). **로컬 검증 신뢰도 하락 → 검증 체계 재정비가 최우선.**
+- **Stage1 규칙 실패**: 0.393 < 0.4237. 비공개 코덱 서명은 라벨과 무관. v4 유지.
+- **Stage2 휴리스틱 성공**: 0.131 → 0.250. 채택.
+- 현재 stage별 최고 조합(v4 S1 + v8 S2 + v2 S3) = 0.3328. 다음 제출은 이 조합 + Stage3 재정비분.
