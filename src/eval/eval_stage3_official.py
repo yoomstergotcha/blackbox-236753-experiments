@@ -70,6 +70,8 @@ def predict_from_cache(ckpt: Path, feat_dir: Path, motion_dir: Path | None, ids:
         x = torch.from_numpy(np.concatenate(parts, 1))
         with torch.inference_mode():
             la, ls = head_a(x).numpy(), head_s(x).numpy()
+        la = la + (state["accel_bias"].numpy() if "accel_bias" in state else 0)
+        ls = ls + (state["steer_bias"].numpy() if "steer_bias" in state else 0)
         pa, ps = smooth_logits(la, smooth).argmax(1), smooth_logits(ls, smooth).argmax(1)
         rows.append(pd.DataFrame({"ID": vid, "frame": fi, "accel_label": [ACCEL[i] for i in pa], "steer_label": [STEER[i] for i in ps]}))
     return pd.concat(rows, ignore_index=True)

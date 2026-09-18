@@ -787,3 +787,16 @@ MOTION-001b 채택 → **제출 후보 6**(`submit_v6.zip`, Stage1 v4·Stage2 ba
 
 ### 다음
 - LB로 v7(S1), v8(S2) 확인 → 채택분을 하나로 합친 v9. Stage2 외부 데이터셋(사고 시점/진입 방향 라벨) 라이선스 조사 재개.
+
+## 19. Stage3 역상관의 원인 규명 — OPEN 원본 세그먼트 발견과 주최측 라벨 정의 역산 (2026-09-18)
+
+### 발견
+- 공개 OPEN_001~005는 comma2k19 **Chunk_1 route `b0c9d2329ad1606b|2018-07-27--06-03-57`의 세그먼트 10/11/3/4/5**(첫 프레임 픽셀차 0.0). 이 route는 291세그먼트 학습셋의 TRAIN에 들어 있었다 → §16~17의 "official-label" 점수는 학습 데이터 평가였고, LB와의 역상관은 여기서 온다. candidate2(chunk1 앞 59세그먼트)도 같은 route를 포함했을 가능성이 높다.
+- 세그먼트의 CAN으로 공식 라벨 40행을 대조: accel 임계 **0.33~0.35 m/s²**(우리 0.3), steer deadzone **4~5°**(우리 3°), stopped < 0.47 m/s. 우리 라벨은 소수 클래스를 더 자주 붙여 모델이 ACC/DEC/LEFT/RIGHT를 과예측(OPEN 전체 프레임 분포: STRAIGHT 0.52~0.66 vs 공식 0.78).
+- LB 순서(candidate2 0.370 > motion+cw 0.355 > CLASS-001+cw 0.225)는 "소수 클래스 과예측이 적은 순서"와 일치.
+
+### 조치
+1. 라벨 v2: stopped 0.3 / accel ±0.35 / deadzone 4.5° (`configs/stage3/comma2k19_label_v2.yaml`) — 40행 97.5%/100% 일치.
+2. 학습에서 OPEN route를 **완전 제외**(`--holdout-route`) → official 50행 + 원본 CAN으로 재구성한 dense 라벨이 진짜 held-out 검증이 된다.
+3. class weight 제거(MOTION-003) + 공개 라벨 비율로 prior 보정(PRIOR-001, |bias|≤1) + smoothing → 제출 후보 9.
+4. 비공개가 다른 차량(Civic, Chunk_3+)일 가능성 대비 청크 추가 다운로드 검토.

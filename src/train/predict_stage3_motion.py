@@ -169,13 +169,17 @@ def _frame_features(model, rgb: np.ndarray, device, batch: int = 128) -> np.ndar
 def predict_stage3(data_dir, model_dir):
     device = _device()
     state = torch.load(Path(model_dir) / "best.pt", map_location="cpu", weights_only=False)
-    motion_dim = int(state["motion_mean"].shape[0])
+    # EXP-S3-PRIOR-001: 공개 라벨 비율로 맞춘 고정 logit bias(빌드 시 상수). 없으면 0.
+    accel_bias = state.pop("accel_bias", torch.zeros(4)).numpy()
+    steer_bias = state.pop("steer_bias", torch.zeros(3)).numpy()
+    has_motion = "motion_mean" in state  # 없으면 appearance-only 체크포인트(제출 2 candidate2 계열)
+    motion_dim = int(state["motion_mean"].shape[0]) if has_motion else 0
     horizons = [int(h) for h in state["motion_horizons"].tolist()] if "motion_horizons" in state else []
     use_app = int(state["accel.0.weight"].shape[1]) > motion_dim
     model = _Stage3ResNetMotionHead(motion_dim, use_app, horizons)
-    model.load_state_dict(state)
+    model.load_state_dict(state, strict=has_motion)
     model.to(device).eval()
-    m_mean, m_std = state["motion_mean"].numpy(), state["motion_std"].numpy()
+    m_mean, m_std = (state["motion_mean"].numpy(), state["motion_std"].numpy()) if has_motion else (None, None)
 
     videos = _video_paths(Path(data_dir) / "videos")
     rows = []
@@ -186,12 +190,13 @@ def predict_stage3(data_dir, model_dir):
             parts = []
             if use_app:
                 parts.append(_clip_features(_frame_features(model, rgb, device), frame_idx))
-            motion = _motion_per_frame(gray)
-            parts.append(((_motion_clip_features(motion, frame_idx, horizons) - m_mean) / m_std).astype(np.float32))
+            if has_motion:
+                motion = _motion_per_frame(gray)
+                parts.append(((_motion_clip_features(motion, frame_idx, horizons) - m_mean) / m_std).astype(np.float32))
             x = torch.from_numpy(np.concatenate(parts, 1)).to(device)
             accel_logits, steer_logits = model.heads(x)
-            accel_idx = _smooth_logits(accel_logits.float().cpu().numpy()).argmax(1).tolist()
-            steer_idx = _smooth_logits(steer_logits.float().cpu().numpy()).argmax(1).tolist()
+            accel_idx = _smooth_logits(accel_logits.float().cpu().numpy() + accel_bias).argmax(1).tolist()
+            steer_idx = _smooth_logits(steer_logits.float().cpu().numpy() + steer_bias).argmax(1).tolist()
             for sample_index, a, s in zip(frame_idx.tolist(), accel_idx, steer_idx):
                 rows.append({"ID": path.stem, "sample_index": sample_index, "accel_label": _ACCEL_LABELS[a], "steer_label": _STEER_LABELS[s]})
     del model
