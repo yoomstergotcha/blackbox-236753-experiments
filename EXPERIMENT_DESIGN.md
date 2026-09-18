@@ -808,6 +808,9 @@ MOTION-001b 채택 → **제출 후보 6**(`submit_v6.zip`, Stage1 v4·Stage2 ba
 - **MOTION-005**(두 차량, OPEN route holdout, no cw, motion, fps-aug): 내부 val 0.645/0.669, official 0.780/0.797, dense OPEN 0.770 (004: 0.821/0.819, 0.776 — RAV4 route에선 동급). → 제출 후보 11.
 - Civic 라벨 분포: STOPPED 10.5% (RAV4 7.5%), STRAIGHT 83.8% — 도심 정지가 더 많음.
 
+- **재인코딩 강건성**(`EXP-S3-REENCODE-001`): OPEN을 10fps mp4v로 재구성해 v11 snippet 실행 → 원해상도 0.765(캐시 0.770, 예측 일치 98%), 1280×720 리사이즈 0.749(steer −0.07). 파이프라인 차이도 갭을 설명 못 함.
+- 남는 가설: 비공개 Stage3는 comma2k19가 아닌 **별도 촬영**(한국 도로/다른 카메라/자체 CAN). 그렇다면 appearance 특징의 전이가 나쁘고 motion 특징의 절대 스케일도 어긋남 → 영상별 정규화 motion-only 변형이 후보.
+
 ### 다음
 - v10 vs v11 LB S3 비교 → 비공개 차량 판단. 둘 다 0.4 근처면 "10Hz 재구성" 파이프라인 차이를 재현하는 실험(OPEN 영상을 10fps로 재인코딩해 예측 변화 측정)으로 전환.
 - 나머지 Civic 9route 캐시 완료 후 MOTION-006(전체 493seg).
