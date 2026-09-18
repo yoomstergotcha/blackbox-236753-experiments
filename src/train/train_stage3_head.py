@@ -108,6 +108,7 @@ def main() -> None:
     parser.add_argument("--motion", type=Path, default=None, help="stage3_motion.py 캐시 디렉터리 - optical-flow ego-motion 특징 concat (EXP-S3-MOTION-001)")
     parser.add_argument("--fps-aug", action="store_true", help="10fps 시뮬레이션(짝수 프레임+stride-2 motion) 샘플을 학습에 추가, val은 20fps/10fps 둘 다 보고")
     parser.add_argument("--no-appearance", action="store_true", help="motion 특징만 사용(ablation)")
+    parser.add_argument("--holdout-route", default="", help="쉼표 구분 route id — train/val 모두에서 제외(공개 OPEN 원본 route 등)")
     parser.add_argument("--motion-horizons", default="16,32,64,128", help="다중 지평 log-ratio 특징의 H(프레임) 목록, '0'이면 없음")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
@@ -117,6 +118,11 @@ def main() -> None:
     labels = pd.read_csv(args.labels)
     horizons = tuple(int(h) for h in args.motion_horizons.split(",") if int(h) > 0) if args.motion is not None else ()
     segs = sorted(labels["segment_id"].unique())
+    holdout = {r for r in args.holdout_route.split(",") if r}
+    if holdout:
+        before = len(segs)
+        segs = [s_ for s_ in segs if route_id(s_) not in holdout]
+        print(f"holdout routes {sorted(holdout)}: {before - len(segs)} segments excluded")
     train_segs, val_segs = group_train_val_split(segs, val_ratio=args.val_ratio, seed=args.seed)
     assert_no_route_leakage(train_segs, val_segs)
     tr, va = labels[labels["segment_id"].isin(train_segs)], labels[labels["segment_id"].isin(val_segs)]

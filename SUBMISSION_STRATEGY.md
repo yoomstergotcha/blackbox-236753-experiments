@@ -119,6 +119,13 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - `submit_v8.zip`(127MB, MD5 `a4f0c834b6017d0d9de5b22bebfccb40`): Stage1 = v4, Stage3 = v6, Stage2만 변경.
 - 기대: S2 0.13 → 0.30~0.45 (total +0.07~0.13). 1등 갭 중 가장 큰 항목.
 
+### 제출 9: Stage3 = MOTION-003(class weight 없음) + prior 보정 + smoothing — **완료, 제출 대기** (2026-09-18 01:10)
+
+- 원인 규명([EXPERIMENT_DESIGN.md §19](EXPERIMENT_DESIGN.md)): 공개 OPEN 5영상이 comma2k19 Chunk_1 route `2018-07-27--06-03-57`(학습셋 포함)이라 그동안의 official-label 로컬 점수는 학습 데이터 평가였고, 주최측 라벨 임계는 accel ±0.35 m/s²·deadzone 4.5°(우리 0.3/3°)라 우리 모델이 소수 클래스를 과예측. class weight가 이를 증폭 → v5b 붕괴.
+- v9 Stage3: class weight 제거(MOTION-003) + 공개 라벨 비율로 고정 logit bias(|b|≤1) + 31프레임 smoothing. OPEN 전체 프레임 예측 분포 accel .60/.19/.14/.07, steer .76/.13/.11 (공식 .60/.16/.18/.06, .78/.12/.10).
+- `submit_v9.zip`(127MB, MD5 `faa780a2bc54efff90b55bdfaf438a5d`): Stage1 v4, Stage2 v8, Stage3만 변경.
+- 기대: S3 0.355(v6) → 0.40+ (candidate2 0.370 초과 목표). 후속 v10 = 재라벨(v2 임계) + OPEN route holdout 학습.
+
 ### 그 다음 (예정)
 - LB로 v7(S1)·v8(S2) 확인 후 채택분을 합친 v9. Stage2: 사고 시점/진입 방향 라벨이 있는 외부 데이터셋 라이선스 조사 재개(DoTA/CCD/DAD/Nexar). Stage3: 1D temporal conv, backbone 부분 unfreeze.
 - Stage1: 보류(v4 0.4237). 재개 조건: 비공개 재녹화 외형에 대한 새 가설(예: 코덱/해상도/fps 재인코딩, 프레임 중복·깜빡임 등 시간축 흔적)이 생겼을 때 1슬롯 프로브.

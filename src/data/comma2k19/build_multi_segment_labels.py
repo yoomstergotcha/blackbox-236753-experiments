@@ -30,10 +30,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="추출된 다중 세그먼트 -> 10Hz 라벨 테이블")
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--config", type=Path, default=None, help="라벨 임계값 yaml (기본 configs/stage3/comma2k19_label.yaml)")
     args = parser.parse_args()
 
     args.out.mkdir(parents=True, exist_ok=True)
-    config = LabelConfig.load()
+    config = LabelConfig.load(args.config)
     segments = find_segments(args.root)
     print(f"{len(segments)}개 segment 발견")
 

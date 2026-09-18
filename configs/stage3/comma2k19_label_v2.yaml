@@ -1,0 +1,24 @@
+# v2 (2026-09-18, EXP-S3-SOURCE-001): 공개 OPEN 5영상 원본 세그먼트의 CAN으로 주최측 라벨 40행을 대조해 역산한 임계값.
+# accel 0.33~0.35 (97.5%), deadzone 4~5도 (100%), stopped < 0.47 m/s. v1(0.3/3.0)은 소수 클래스를 과다 라벨링.
+# Stage 3 comma2k19 -> accel_label/steer_label 변환 파라미터.
+#
+# 값 자체는 아직 튜닝하지 않은 초기값이다 (EXPERIMENT_DESIGN.md EXP-S3-LABEL-001).
+# 이 60초 데모 세그먼트 하나의 class distribution이 예쁘게 나오도록 여기 값을
+# 바꾸지 않는다 — 실제 튜닝은 여러 route를 가져온 뒤(EXP-S3-LABEL-002) 진행한다.
+
+stopped_speed_threshold_mps: 0.3      # 이 미만 속도면 STOPPED
+accel_positive_threshold_mps2: 0.35   # 가속도가 이 값보다 크면 ACCELERATING
+accel_negative_threshold_mps2: -0.35  # 가속도가 이 값보다 작으면 DECELERATING
+steering_deadzone_deg: 4.5            # |steering_angle| 이 값 이하면 STRAIGHT
+
+# steer_label 부호 규약. VERIFIED 2026-09-14 (EXPERIMENT_DESIGN.md §9~11):
+# 21route/64segment 전체에서 gyro_z(요레이트)와 반대 부호 (corr 평균 -0.907, 64/64 예외
+# 없음). FRD(forward-right-down) 프레임에서 +gyro_z = 우회전이므로 steering_angle은
+# +일 때 좌회전 = LEFT. 영상 육안 확인은 데이터 제약으로 못했으나 이 motion-signal
+# 근거로 사용자 승인(Human Review 선택지 A, 2026-09-14) 받아 확정. 뒤집으려면 반증 필요.
+steer_sign: 1
+
+# 0 또는 1 = smoothing 없음(현재 기본값, 검증된 결과와 동일하게 유지).
+# 2 이상으로 올리면 derivative 계산 전에 해당 길이의 이동평균을 적용한다.
+speed_smoothing_window: 1
+steering_smoothing_window: 1
