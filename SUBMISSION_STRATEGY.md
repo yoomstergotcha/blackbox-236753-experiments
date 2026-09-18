@@ -132,6 +132,12 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - `submit_v10.zip`(127MB, MD5 `f45efbd9dbf46537fd5549a8ee518986`): Stage1 v4, Stage2 v8, Stage3만 변경(class weight 없음, motion, smoothing 31, prior 보정 생략).
 - 남은 의문: 로컬 0.82 vs LB 최고 0.37. v10의 LB가 여전히 0.4 근처면 비공개는 다른 차량/도메인(Chunk_3 = 다른 차량 다운로드 중) 또는 라벨 정의의 다른 요소(smoothing/시간 정렬)를 의심.
 
+### 제출 11: Stage3 = 두 차량(RAV4+Civic) 학습 (EXP-S3-MOTION-005) — **완료, 제출 대기, 2순위** (2026-09-18 22:10)
+
+- Chunk_3(Civic) 115세그먼트 추가, 라벨 v2 임계, OPEN route holdout, class weight 없음. RAV4 전용 모델의 Civic 점수 0.59~0.61(내부 0.64~0.65) → 차량 시프트 −0.05.
+- `submit_v11.zip`(127MB, MD5 `e3ffbe20a40dcefb7210575653689e75`): v10과 Stage3만 다름. held-out official 0.780/0.797, dense 0.770.
+- 판단 규칙: LB S3 v11 > v10이면 비공개는 다른 차량 비중이 큼 → Civic 전체(202seg)·추가 청크로 확장. 둘 다 0.4 근처면 재인코딩 파이프라인 재현 실험으로 전환. 상세 [EXPERIMENT_DESIGN.md §20](EXPERIMENT_DESIGN.md).
+
 ### 그 다음 (예정)
 - LB로 v7(S1)·v8(S2) 확인 후 채택분을 합친 v9. Stage2: 사고 시점/진입 방향 라벨이 있는 외부 데이터셋 라이선스 조사 재개(DoTA/CCD/DAD/Nexar). Stage3: 1D temporal conv, backbone 부분 unfreeze.
 - Stage1: 보류(v4 0.4237). 재개 조건: 비공개 재녹화 외형에 대한 새 가설(예: 코덱/해상도/fps 재인코딩, 프레임 중복·깜빡임 등 시간축 흔적)이 생겼을 때 1슬롯 프로브.

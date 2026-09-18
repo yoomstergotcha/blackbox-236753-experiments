@@ -800,3 +800,14 @@ MOTION-001b 채택 → **제출 후보 6**(`submit_v6.zip`, Stage1 v4·Stage2 ba
 2. 학습에서 OPEN route를 **완전 제외**(`--holdout-route`) → official 50행 + 원본 CAN으로 재구성한 dense 라벨이 진짜 held-out 검증이 된다.
 3. class weight 제거(MOTION-003) + 공개 라벨 비율로 prior 보정(PRIOR-001, |bias|≤1) + smoothing → 제출 후보 9.
 4. 비공개가 다른 차량(Civic, Chunk_3+)일 가능성 대비 청크 추가 다운로드 검토.
+
+## 20. 두 번째 차량(Civic, Chunk_3) 추가와 차량 도메인 시프트 측정 (2026-09-18)
+
+- Chunk_3(9.41GB, HF `raw_data/Chunk_3.zip`, MIT) = dongle `99c94dc769b5d96e`(Civic) 202세그먼트/21route. 우선 12route/115세그먼트 추출·캐시(라벨 v3 = RAV4 291 + Civic 115), 나머지 9route는 추출 중(라벨 v4).
+- **Cross-car**: RAV4 전용 MOTION-004를 Civic 115세그먼트에 평가 → native 0.587 / sim10 0.605 (RAV4 내부 held-out 0.636/0.654). 차량·카메라 시프트 ≈ −0.05. **LB 0.37 vs 로컬 0.78~0.82의 갭을 설명하기엔 작다** → 비공개는 차량 외 요소(10Hz 재구성 파이프라인의 재인코딩/해상도, 또는 다른 라벨 후처리)도 다를 가능성.
+- **MOTION-005**(두 차량, OPEN route holdout, no cw, motion, fps-aug): 내부 val 0.645/0.669, official 0.780/0.797, dense OPEN 0.770 (004: 0.821/0.819, 0.776 — RAV4 route에선 동급). → 제출 후보 11.
+- Civic 라벨 분포: STOPPED 10.5% (RAV4 7.5%), STRAIGHT 83.8% — 도심 정지가 더 많음.
+
+### 다음
+- v10 vs v11 LB S3 비교 → 비공개 차량 판단. 둘 다 0.4 근처면 "10Hz 재구성" 파이프라인 차이를 재현하는 실험(OPEN 영상을 10fps로 재인코딩해 예측 변화 측정)으로 전환.
+- 나머지 Civic 9route 캐시 완료 후 MOTION-006(전체 493seg).
