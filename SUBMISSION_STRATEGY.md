@@ -126,6 +126,12 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - `submit_v9.zip`(127MB, MD5 `faa780a2bc54efff90b55bdfaf438a5d`): Stage1 v4, Stage2 v8, Stage3만 변경.
 - 기대: S3 0.355(v6) → 0.40+ (candidate2 0.370 초과 목표). 후속 v10 = 재라벨(v2 임계) + OPEN route holdout 학습.
 
+### 제출 10: Stage3 = 라벨 v2 재학습 + OPEN route holdout (EXP-S3-MOTION-004) — **완료, 제출 대기, 1순위** (2026-09-18 01:40)
+
+- 주최측 임계(accel ±0.35, deadzone 4.5°, stopped 0.3)로 291세그먼트 재라벨 → 분포가 공식 비율에 근접(STRAIGHT .74, CONSTANT .67). OPEN route 8세그먼트를 학습/검증에서 완전 제외 → **정직한 official 50행 0.821(native)/0.819(10fps-sim)**, 예측 분포 보정 없이 L1 0.13/0.07.
+- `submit_v10.zip`(127MB, MD5 `f45efbd9dbf46537fd5549a8ee518986`): Stage1 v4, Stage2 v8, Stage3만 변경(class weight 없음, motion, smoothing 31, prior 보정 생략).
+- 남은 의문: 로컬 0.82 vs LB 최고 0.37. v10의 LB가 여전히 0.4 근처면 비공개는 다른 차량/도메인(Chunk_3 = 다른 차량 다운로드 중) 또는 라벨 정의의 다른 요소(smoothing/시간 정렬)를 의심.
+
 ### 그 다음 (예정)
 - LB로 v7(S1)·v8(S2) 확인 후 채택분을 합친 v9. Stage2: 사고 시점/진입 방향 라벨이 있는 외부 데이터셋 라이선스 조사 재개(DoTA/CCD/DAD/Nexar). Stage3: 1D temporal conv, backbone 부분 unfreeze.
 - Stage1: 보류(v4 0.4237). 재개 조건: 비공개 재녹화 외형에 대한 새 가설(예: 코덱/해상도/fps 재인코딩, 프레임 중복·깜빡임 등 시간축 흔적)이 생겼을 때 1슬롯 프로브.
