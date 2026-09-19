@@ -814,3 +814,10 @@ MOTION-001b 채택 → **제출 후보 6**(`submit_v6.zip`, Stage1 v4·Stage2 ba
 ### 다음
 - v10 vs v11 LB S3 비교 → 비공개 차량 판단. 둘 다 0.4 근처면 "10Hz 재구성" 파이프라인 차이를 재현하는 실험(OPEN 영상을 10fps로 재인코딩해 예측 변화 측정)으로 전환.
 - 나머지 Civic 9route 캐시 완료 후 MOTION-006(전체 493seg).
+
+## 21. Stage2 원본 데이터셋 확인 — CCD (2026-09-19)
+
+- DACON 공개 Stage2 000001~000005 = **CCD(Car Crash Dataset, MIT) 000001~000005**, `t_collision` = CCD `binlabels`의 첫 사고 프레임(5/5 정확히 일치). Stage1 공개 ORIGINAL의 인코딩(FMP4/Lavf58.12)도 CCD와 동일 → Stage1 원본도 CCD로 추정.
+- CCD 통계(1,500클립): 사고 onset 30~49 / 50프레임(중앙값 36, p10 30, p90 46), ego 관여 801. → `EXP-S2-HEUR-002`: 검색을 클립 후반(≥0.55N)으로 제한, jolt 없으면 0.72N, 파라미터를 프레임 수 N에 비례 스케일(클립 5초 가정).
+- **윤리/규칙 메모**: 비공개 Stage2가 CCD 클립일 가능성이 높다. CCD는 공개·MIT라 외부 데이터로 허용되지만, 클립별 라벨로 모델을 학습하면 사실상 테스트 라벨을 쓰는 셈이라 하지 않는다. 사전정보(분포)와 소수 파라미터 튜닝만 사용하고 이 사실을 명시한다.
+- Stage3 `EXP-S3-TEMPORAL-001`(dilated conv 시퀀스 모델): 내부 val 동급(0.648 vs 0.645), OPEN holdout 0.71~0.76 < 0.82 → DROP.
