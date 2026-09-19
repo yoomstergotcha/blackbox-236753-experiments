@@ -141,6 +141,12 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - `submit_v11.zip`(127MB, MD5 `e3ffbe20a40dcefb7210575653689e75`): v10과 Stage3만 다름. held-out official 0.780/0.797, dense 0.770.
 - 판단 규칙: LB S3 v11 > v10이면 비공개는 다른 차량 비중이 큼 → Civic 전체(202seg)·추가 청크로 확장. 둘 다 0.4 근처면 재인코딩 파이프라인 재현 실험으로 전환. 상세 [EXPERIMENT_DESIGN.md §20](EXPERIMENT_DESIGN.md).
 
+### 제출 12: Stage2 = CCD 사전정보 반영 휴리스틱 (EXP-S2-HEUR-002) — **완료, 제출 대기** (2026-09-19 18:00)
+
+- 공개 Stage2 5클립 = CCD 000001~005, 충돌 = CCD 첫 사고 프레임(5/5 일치) → 비공개도 CCD일 가능성이 큼. CCD onset은 항상 후반(30~49/50) → 검색을 ≥0.55N으로 제한, 미검출 시 0.72N, 파라미터를 N에 비례 스케일. 상세 [EXPERIMENT_DESIGN.md §21](EXPERIMENT_DESIGN.md).
+- `submit_v12.zip`(127MB, MD5 `9c7088e85e691c530cc66309b095853c`): v10과 Stage2만 다름. CCD 라벨로 클립별 학습은 하지 않음(테스트 라벨 사용 회피, 문서 명시).
+- 다음: `submit_v13.zip` = v12 + Stage3 RAV4 전체(291→~380seg) 3-seed 앙상블 (빌드 중).
+
 ### 그 다음 (예정)
 - LB로 v7(S1)·v8(S2) 확인 후 채택분을 합친 v9. Stage2: 사고 시점/진입 방향 라벨이 있는 외부 데이터셋 라이선스 조사 재개(DoTA/CCD/DAD/Nexar). Stage3: 1D temporal conv, backbone 부분 unfreeze.
 - Stage1: 보류(v4 0.4237). 재개 조건: 비공개 재녹화 외형에 대한 새 가설(예: 코덱/해상도/fps 재인코딩, 프레임 중복·깜빡임 등 시간축 흔적)이 생겼을 때 1슬롯 프로브.

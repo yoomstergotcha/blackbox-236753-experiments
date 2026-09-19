@@ -24,6 +24,7 @@ _ap.add_argument("--stage1-mode", choices=["synth", "baseline"], default="synth"
 _ap.add_argument("--stage3-ckpt", type=Path, default=None, help="지정하면 Stage3 best.pt 교체(기본: 제출2와 동일 model_v2/stage3)")
 _ap.add_argument("--stage1-snippet", type=Path, default=None, help="Stage1 추론 snippet 교체(기본 predict_stage1_synth.py)")
 _ap.add_argument("--stage2-snippet", type=Path, default=None, help="Stage2 추론 snippet 교체(기본: 공식 baseline 셀)")
+_ap.add_argument("--stage3-extra-ckpt", type=Path, nargs="*", default=[], help="Stage3 앙상블 멤버 best.pt들 (model/stage3/best_1.pt ...로 복사)")
 _ap.add_argument("--stage3-snippet", type=Path, default=None, help="Stage3 추론 snippet 교체(기본 predict_stage3_comma2k19.py)")
 _args = _ap.parse_args()
 STAGE1_CHECKPOINT = _args.stage1_ckpt
@@ -65,6 +66,8 @@ def stage_model_files() -> Path:
         shutil.copytree(src_v2 / stage, model_dir / stage)
     if _args.stage3_ckpt is not None:
         shutil.copy2(_args.stage3_ckpt, model_dir / "stage3" / "best.pt")
+    for i, extra in enumerate(_args.stage3_extra_ckpt, 1):
+        shutil.copy2(extra, model_dir / "stage3" / f"best_{i}.pt")
     if _args.stage1_mode == "baseline":
         shutil.copytree(src_v2 / "stage1", model_dir / "stage1")
     else:

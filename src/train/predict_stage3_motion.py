@@ -166,21 +166,37 @@ def _frame_features(model, rgb: np.ndarray, device, batch: int = 128) -> np.ndar
     return np.concatenate(feats)
 
 
+def _load_stage3_models(model_dir, device):
+    """model_dir/best.pt (+ best_*.pt 가 있으면 앙상블: logit 평균). 반환 [(model, accel_bias, steer_bias)], has_motion, horizons, m_mean, m_std"""
+    paths = sorted(Path(model_dir).glob("best*.pt"))
+    models, meta = [], None
+    for pth in paths:
+        state = torch.load(pth, map_location="cpu", weights_only=False)
+        accel_bias = state.pop("accel_bias", torch.zeros(4)).numpy()
+        steer_bias = state.pop("steer_bias", torch.zeros(3)).numpy()
+        has_motion = "motion_mean" in state
+        motion_dim = int(state["motion_mean"].shape[0]) if has_motion else 0
+        horizons = [int(h) for h in state["motion_horizons"].tolist()] if "motion_horizons" in state else []
+        use_app = int(state["accel.0.weight"].shape[1]) > motion_dim
+        model = _Stage3ResNetMotionHead(motion_dim, use_app, horizons)
+        model.load_state_dict(state, strict=has_motion)
+        model.to(device).eval()
+        m_mean, m_std = (state["motion_mean"].numpy(), state["motion_std"].numpy()) if has_motion else (None, None)
+        this = (has_motion, tuple(horizons), use_app)
+        if meta is None:
+            meta = (this, m_mean, m_std)
+        elif this != meta[0]:
+            raise ValueError(f"앙상블 멤버 특징 구성이 다릅니다: {pth.name}")
+        models.append((model, accel_bias, steer_bias, m_mean, m_std))
+    if not models:
+        raise FileNotFoundError(f"{model_dir}/best*.pt 없음")
+    return models, meta[0][0], list(meta[0][1]), meta[0][2]
+
+
 def predict_stage3(data_dir, model_dir):
     device = _device()
-    state = torch.load(Path(model_dir) / "best.pt", map_location="cpu", weights_only=False)
-    # EXP-S3-PRIOR-001: 공개 라벨 비율로 맞춘 고정 logit bias(빌드 시 상수). 없으면 0.
-    accel_bias = state.pop("accel_bias", torch.zeros(4)).numpy()
-    steer_bias = state.pop("steer_bias", torch.zeros(3)).numpy()
-    has_motion = "motion_mean" in state  # 없으면 appearance-only 체크포인트(제출 2 candidate2 계열)
-    motion_dim = int(state["motion_mean"].shape[0]) if has_motion else 0
-    horizons = [int(h) for h in state["motion_horizons"].tolist()] if "motion_horizons" in state else []
-    use_app = int(state["accel.0.weight"].shape[1]) > motion_dim
-    model = _Stage3ResNetMotionHead(motion_dim, use_app, horizons)
-    model.load_state_dict(state, strict=has_motion)
-    model.to(device).eval()
-    m_mean, m_std = (state["motion_mean"].numpy(), state["motion_std"].numpy()) if has_motion else (None, None)
-
+    models, has_motion, horizons, use_app = _load_stage3_models(model_dir, device)
+    model = models[0][0]  # backbone은 공통(ImageNet frozen) - 프레임 특징은 한 번만 계산
     videos = _video_paths(Path(data_dir) / "videos")
     rows = []
     with torch.inference_mode():
@@ -190,15 +206,22 @@ def predict_stage3(data_dir, model_dir):
             parts = []
             if use_app:
                 parts.append(_clip_features(_frame_features(model, rgb, device), frame_idx))
-            if has_motion:
-                motion = _motion_per_frame(gray)
-                parts.append(((_motion_clip_features(motion, frame_idx, horizons) - m_mean) / m_std).astype(np.float32))
-            x = torch.from_numpy(np.concatenate(parts, 1)).to(device)
-            accel_logits, steer_logits = model.heads(x)
-            accel_idx = _smooth_logits(accel_logits.float().cpu().numpy() + accel_bias).argmax(1).tolist()
-            steer_idx = _smooth_logits(steer_logits.float().cpu().numpy() + steer_bias).argmax(1).tolist()
+            motion_clip = _motion_clip_features(_motion_per_frame(gray), frame_idx, horizons) if has_motion else None
+            la_sum, ls_sum = None, None
+            for mdl, accel_bias, steer_bias, m_mean, m_std in models:
+                feats = list(parts)
+                if has_motion:
+                    feats.append(((motion_clip - m_mean) / m_std).astype(np.float32))
+                x = torch.from_numpy(np.concatenate(feats, 1)).to(device)
+                la, ls = mdl.heads(x)
+                la = la.float().cpu().numpy() + accel_bias
+                ls = ls.float().cpu().numpy() + steer_bias
+                la_sum = la if la_sum is None else la_sum + la
+                ls_sum = ls if ls_sum is None else ls_sum + ls
+            accel_idx = _smooth_logits(la_sum / len(models)).argmax(1).tolist()
+            steer_idx = _smooth_logits(ls_sum / len(models)).argmax(1).tolist()
             for sample_index, a, s in zip(frame_idx.tolist(), accel_idx, steer_idx):
                 rows.append({"ID": path.stem, "sample_index": sample_index, "accel_label": _ACCEL_LABELS[a], "steer_label": _STEER_LABELS[s]})
-    del model
+    del models, model
     torch.cuda.empty_cache()
     return pd.DataFrame(rows, columns=["ID", "sample_index", "accel_label", "steer_label"])
