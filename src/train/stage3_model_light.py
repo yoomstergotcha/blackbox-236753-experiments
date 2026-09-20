@@ -56,7 +56,7 @@ class Stage3ResNetMotionHead(nn.Module):
     표준화 - 버퍼로 저장해 추론 snippet이 동일하게 적용). head 입력 = 512 (appearance) + 39 (motion).
     use_appearance=False면 motion 39-d만 쓰는 ablation."""
 
-    def __init__(self, motion_dim: int = 39, pretrained: bool = True, use_appearance: bool = True, horizons: tuple[int, ...] = ()):
+    def __init__(self, motion_dim: int = 39, pretrained: bool = True, use_appearance: bool = True, horizons: tuple[int, ...] = (), app_dim: int = 512):
         super().__init__()
         self.register_buffer("motion_horizons", torch.tensor(list(horizons), dtype=torch.long))  # 추론 시 같은 지평으로 특징 재구성
         backbone = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
@@ -65,7 +65,7 @@ class Stage3ResNetMotionHead(nn.Module):
         for p in self.backbone.parameters():
             p.requires_grad = False
         self.use_appearance = use_appearance
-        in_dim = (512 if use_appearance else 0) + motion_dim
+        in_dim = (app_dim if use_appearance else 0) + motion_dim  # app_dim: ResNet18 512 / DINOv2-S 384
         self.register_buffer("motion_mean", torch.zeros(motion_dim))
         self.register_buffer("motion_std", torch.ones(motion_dim))
         self.accel = nn.Sequential(nn.Linear(in_dim, 128), nn.ReLU(), nn.Dropout(0.3), nn.Linear(128, 4))

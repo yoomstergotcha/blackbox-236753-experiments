@@ -138,7 +138,9 @@ def main() -> None:
         xtr, atr, str_ = np.concatenate([xtr, xtr10]), np.concatenate([atr, atr10]), np.concatenate([str_, str10])
     motion_mean = motion_std = None
     if args.motion is not None:
-        app_dim = 1024 if args.temporal else 512
+        motion_total = xtr.shape[1] - int(np.load(args.features / (sorted(labels.segment_id.unique())[0].replace('/', '__') + '.npy'), mmap_mode='r').shape[1]) * (2 if args.temporal else 1)
+        app_dim = xtr.shape[1] - motion_total  # 특징 파일 차원에서 유도(ResNet 512 / DINOv2 384)
+        print(f"app_dim={app_dim} motion_dim={motion_total}")
         motion_mean = xtr[:, app_dim:].mean(0)
         motion_std = xtr[:, app_dim:].std(0) + 1e-6
 
@@ -153,7 +155,7 @@ def main() -> None:
     print("val accel dist:", Counter(ava.tolist()), "val steer dist:", Counter(sva.tolist()))
 
     if args.motion is not None:
-        full = Stage3ResNetMotionHead(motion_dim=len(motion_mean), pretrained=True, use_appearance=not args.no_appearance, horizons=horizons)
+        full = Stage3ResNetMotionHead(motion_dim=len(motion_mean), pretrained=True, use_appearance=not args.no_appearance, horizons=horizons, app_dim=app_dim)
         full.motion_mean.copy_(torch.from_numpy(motion_mean.astype(np.float32))); full.motion_std.copy_(torch.from_numpy(motion_std.astype(np.float32)))
     else:
         full = Stage3ResNetHead(pretrained=True)  # backbone 가중치는 export용, 학습은 head만
