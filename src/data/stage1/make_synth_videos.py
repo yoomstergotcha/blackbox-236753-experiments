@@ -120,6 +120,9 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=20260825)
     ap.add_argument("--h264-ratio", type=float, default=0.2)
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--extra-src-dir", type=Path, default=None, help="실제 원본 mp4 디렉터리(예: CCD) — 재인코딩 없이 ORIGINAL로 복사하고 합성 재녹화 쌍 생성")
+    ap.add_argument("--n-extra", type=int, default=400)
+    ap.add_argument("--extra-exclude", default="000001,000002,000003,000004,000005")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(args.seed)
@@ -136,6 +139,12 @@ def main() -> None:
     for kind, df in (("rav4", rav), ("civic", civ)):
         for r in df.itertuples(index=False):
             jobs.append((f"{kind}_{r.segment_id.replace('/', '__')}", r.video_path, kind, args.out, args.h264_ratio, int(rng.integers(1 << 30))))
+    if args.extra_src_dir is not None:
+        excl = set(args.extra_exclude.split(","))
+        srcs = sorted(p for p in args.extra_src_dir.glob("*.mp4") if p.stem not in excl)
+        idx = rng.choice(len(srcs), size=min(args.n_extra, len(srcs)), replace=False)
+        for i in sorted(idx):
+            jobs.append((f"extra_{srcs[i].stem}", str(srcs[i]), "official", args.out, args.h264_ratio, int(rng.integers(1 << 30))))
     print(f"{len(jobs)} clips, workers={args.workers}", flush=True)
     with Pool(args.workers) as pool:
         for k, res in enumerate(pool.imap_unordered(_job, jobs), 1):
