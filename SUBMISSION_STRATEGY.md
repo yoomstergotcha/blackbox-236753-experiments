@@ -157,7 +157,7 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 
 ### 제출 14·15 (2026-09-20)
 
-- **v14** (빌드 중): Stage1 = `EXP-S1-SYNTH-007`(재촬영 합성 → **mpeg4 저비트율 재인코딩**까지 재현한 765개 합성 영상 + 공식 5쌍, LOPO) 프로브. Stage2 = v8 원복, Stage3 = v13. S1 열로 판정: ≥0.6이면 가설 확인.
+- **v14** (`submit_v14.zip` 207MB, MD5 `0d5857aa69cf48edddb48c72bfa19862`; LOPO 0.899/AUC 1.0): Stage1 = `EXP-S1-SYNTH-007`(재촬영 합성 → **mpeg4 저비트율 재인코딩**까지 재현한 765개 합성 영상 + 공식 5쌍, LOPO) 프로브. Stage2 = v8 원복, Stage3 = v13. S1 열로 판정: ≥0.6이면 가설 확인.
 - **v15**: Stage3 = v13 앙상블 + seed별 macro-F1 최적 logit bias(`EXP-S3-BIAS-001`, comma2k19 held-out val +0.03). `submit_v15.zip`(207MB, MD5 `b077df726a5b27161057cf74a94ed06d`). Stage2 = v8 원복(0.250 기대), Stage1 = v4.
 - DINOv2-S 특징(`EXP-S3-DINO-001`)은 내부 val +0.03이지만 OPEN held-out −0.25, 앙상블에도 손해 → 폐기.
 
