@@ -155,6 +155,12 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - `submit_v13.zip`(207MB, MD5 `4217588cfb95a2397a56698d51b2e728`): v12와 Stage3만 다름.
 - 제출 순서 제안: v12(S2 사전정보) → v13(S3 데이터+앙상블). LB 열이 분리돼 있어 순서 무관.
 
+### 제출 14·15 (2026-09-20)
+
+- **v14** (빌드 중): Stage1 = `EXP-S1-SYNTH-007`(재촬영 합성 → **mpeg4 저비트율 재인코딩**까지 재현한 765개 합성 영상 + 공식 5쌍, LOPO) 프로브. Stage2 = v8 원복, Stage3 = v13. S1 열로 판정: ≥0.6이면 가설 확인.
+- **v15**: Stage3 = v13 앙상블 + seed별 macro-F1 최적 logit bias(`EXP-S3-BIAS-001`, comma2k19 held-out val +0.03). `submit_v15.zip`(207MB, MD5 `b077df726a5b27161057cf74a94ed06d`). Stage2 = v8 원복(0.250 기대), Stage1 = v4.
+- DINOv2-S 특징(`EXP-S3-DINO-001`)은 내부 val +0.03이지만 OPEN held-out −0.25, 앙상블에도 손해 → 폐기.
+
 ### 그 다음 (예정)
 - LB로 v7(S1)·v8(S2) 확인 후 채택분을 합친 v9. Stage2: 사고 시점/진입 방향 라벨이 있는 외부 데이터셋 라이선스 조사 재개(DoTA/CCD/DAD/Nexar). Stage3: 1D temporal conv, backbone 부분 unfreeze.
 - Stage1: 보류(v4 0.4237). 재개 조건: 비공개 재녹화 외형에 대한 새 가설(예: 코덱/해상도/fps 재인코딩, 프레임 중복·깜빡임 등 시간축 흔적)이 생겼을 때 1슬롯 프로브.
