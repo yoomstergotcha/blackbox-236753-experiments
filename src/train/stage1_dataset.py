@@ -80,13 +80,15 @@ class Stage1TrainDataset(Dataset):
         items = []  # (frame_path, is_official, label, synth)
         for row in manifest.itertuples(index=False):
             official = row.domain == "official_stage1"
+            pre_encoded = official or str(row.domain).startswith("synth_video")  # 실제 인코딩을 거친 프레임: 기저 열화 강제/즉석 합성 없음
             rep = official_repeat if official else 1
             for _ in range(rep):
                 if row.label == "ORIGINAL":
-                    items.append((row.frame_path, official, 0, False))
-                    items.append((row.frame_path, official, 1, True))
+                    items.append((row.frame_path, pre_encoded, 0, False))
+                    if not pre_encoded:
+                        items.append((row.frame_path, pre_encoded, 1, True))
                 else:
-                    items.append((row.frame_path, official, 1, False))
+                    items.append((row.frame_path, pre_encoded, 1, False))
         self.items = items
 
     def set_epoch(self, epoch: int) -> None:

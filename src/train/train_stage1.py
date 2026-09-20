@@ -95,6 +95,13 @@ def summarize(prob: dict, true: dict) -> dict:
 def synth_holdout_probs(model, device, val_synth: pd.DataFrame, seed: int) -> tuple[dict, dict]:
     frames, true = {}, {}
     rng = np.random.default_rng([seed, 999])
+    pre = val_synth[val_synth["domain"].astype(str).str.startswith("synth_video")]
+    for gid, g in pre.groupby("group"):  # 사전 생성 영상: 실제 orig/rerec 프레임을 그대로 평가
+        for label, key in (("ORIGINAL", "orig"), ("RERECORDED", "rerec")):
+            sub = g[g["label"] == label]
+            if len(sub):
+                frames[f"{gid}#{key}"], true[f"{gid}#{key}"] = [load_rgb(p) for p in sub["frame_path"]], label
+    val_synth = val_synth[~val_synth["domain"].astype(str).str.startswith("synth_video")]
     for i, (sid, g) in enumerate(val_synth.groupby("source_id")):
         base = sample_base_params(rng)
         fr = [apply_base(load_rgb(p), base) for p in g["frame_path"]]
@@ -164,7 +171,7 @@ def main() -> None:
 
     m = pd.read_csv(args.manifest)
     official = m[m["domain"] == "official_stage1"]
-    comma = m[m["domain"] == "comma2k19"]
+    comma = m[m["domain"] != "official_stage1"]  # 합성 소스 전체(comma2k19 / synth_video*)에서 val route 선택
     rng = np.random.default_rng(args.seed)
     val_routes = set(rng.choice(sorted(comma["group"].unique()), size=args.val_routes, replace=False).tolist())
     val_synth = comma[comma["group"].isin(val_routes)]
