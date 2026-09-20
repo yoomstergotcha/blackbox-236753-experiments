@@ -21,6 +21,11 @@ _S2_W, _S2_H = 320, 180
 _S2_TAU = 5.0  # jolt 판정 z-score
 _S2_GAP = 3  # 최대 jolt에서 뒤로 탐색할 때 허용하는 비-jolt 프레임 수 (CCD ego 796클립 격자: gap 3이 최적, EXP-S2-CCD-001)
 _S2_JOLT_MODE = "max3"  # 'vert'(HEUR-001) | 'max3' = max(z_shift, z_vert, z_diff): CCD ego 적중 0.565 -> 0.595
+# EXP-S2-HEUR-005: 전역 최대 jolt 대신 *가장 이른* burst(z>TAU_E가 간격<=2로 이어진 구간, 길이>=MIN_LEN)의 시작을 충돌로.
+# 비공개 클립이 CCD 트림보다 길고 사후 충격이 있을 때 global-max는 0.595->0.36으로 무너지고 earliest-burst는 0.45를 유지(CCD 시뮬).
+_S2_EARLIEST = True
+_S2_TAU_E = 8.0
+_S2_MIN_LEN = 2
 _S2_ENTRY_OFFSET = 5  # 프레임 (10fps 가정 0.5s)
 _S2_PRE_LO, _S2_PRE_HI = 12, 2  # 충돌 직전 접근 구간 [c-12, c-2): 접촉 프레임 자체의 전역 jolt는 제외 (±1프레임 이동에 안정)
 # EXP-S2-HEUR-002 (CCD 사전정보): 공개 5클립 = CCD(Car Crash Dataset, MIT) 000001~000005이고 충돌 라벨 = CCD 첫 사고 프레임.
@@ -64,25 +69,41 @@ def _s2_signals(gray):
     return shift, vert, diff
 
 
+def _s2_bursts(base, tau, gapmax=2):
+    idx = np.where(base > tau)[0]
+    if len(idx) == 0:
+        return []
+    out, cur = [], [int(idx[0])]
+    for a, b in zip(idx[:-1], idx[1:]):
+        if b - a <= gapmax:
+            cur.append(int(b))
+        else:
+            out.append(cur)
+            cur = [int(b)]
+    out.append(cur)
+    return out
+
+
 def _s2_collision_index(zs, zv, zd) -> int:
-    """jolt 신호(max3 = 세 z-score의 프레임별 최대)에서 최대값에 앵커한 뒤, 앞쪽 GAP 프레임 안에 또 다른 jolt(z>TAU)가
-    있으면 그쪽으로 옮겨 가며 시작점을 찾는다. 위치 사전정보(후반부 제한)는 쓰지 않는다(제출 12 LB -0.075)."""
+    """HEUR-005: max3 jolt 신호에서 z>TAU_E인 가장 이른 burst(길이>=MIN_LEN)의 시작 프레임. 없으면 완화된 조건(길이 1),
+    그것도 없으면 global-max 앵커 방식(HEUR-003). 위치 사전정보 없음, 프레임 스케일 불변(z-score)."""
     n = len(zv)
     if n < 3:
         return n - 1
-    scale = (n / _S2_REF_N) if _S2_SCALE_BY_N else 1.0
-    gap = max(1, int(round(_S2_GAP * scale)))
-    start = min(int(_S2_SEARCH_FROM * n), n - 1)
     base = np.maximum.reduce([zs, zv, zd]) if _S2_JOLT_MODE == "max3" else zv
-    late = base[start:]
-    if late.max() < _S2_TAU:
-        comb = np.maximum.reduce([zs, zv, zd])[start:]
-        if comb.max() < 3.0:
-            return min(int(round(_S2_FALLBACK * n)), n - 1)
-        return start + int(np.argmax(comb))
-    i = start + int(np.argmax(late))
+    if _S2_EARLIEST:
+        B = _s2_bursts(base, _S2_TAU_E)
+        for b in B:
+            if len(b) >= _S2_MIN_LEN:
+                return b[0]
+        if B:
+            return B[0][0]
+    if base.max() < _S2_TAU:
+        comb = np.maximum.reduce([zs, zv, zd])
+        return int(np.argmax(comb)) if comb.max() >= 3.0 else min(int(round(_S2_FALLBACK * n)), n - 1)
+    i = int(np.argmax(base))
     while True:
-        lo = max(i - gap, start, 1)
+        lo = max(i - _S2_GAP, 1)
         prev = [j for j in range(lo, i) if base[j] > _S2_TAU]
         if not prev:
             return i
