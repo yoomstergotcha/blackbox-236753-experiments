@@ -19,7 +19,8 @@ import pandas as pd
 
 _S2_W, _S2_H = 320, 180
 _S2_TAU = 5.0  # jolt 판정 z-score
-_S2_GAP = 5  # 최대 jolt에서 뒤로 탐색할 때 허용하는 비-jolt 프레임 수
+_S2_GAP = 3  # 최대 jolt에서 뒤로 탐색할 때 허용하는 비-jolt 프레임 수 (CCD ego 796클립 격자: gap 3이 최적, EXP-S2-CCD-001)
+_S2_JOLT_MODE = "max3"  # 'vert'(HEUR-001) | 'max3' = max(z_shift, z_vert, z_diff): CCD ego 적중 0.565 -> 0.595
 _S2_ENTRY_OFFSET = 5  # 프레임 (10fps 가정 0.5s)
 _S2_PRE_LO, _S2_PRE_HI = 12, 2  # 충돌 직전 접근 구간 [c-12, c-2): 접촉 프레임 자체의 전역 jolt는 제외 (±1프레임 이동에 안정)
 # EXP-S2-HEUR-002 (CCD 사전정보): 공개 5클립 = CCD(Car Crash Dataset, MIT) 000001~000005이고 충돌 라벨 = CCD 첫 사고 프레임.
@@ -64,24 +65,25 @@ def _s2_signals(gray):
 
 
 def _s2_collision_index(zs, zv, zd) -> int:
-    """클립 후반(>= SEARCH_FROM*N)에서 최대 수직 jolt에 앵커한 뒤, 앞쪽 GAP 프레임 안의 다른 jolt(z>TAU)로 옮겨 가며 시작점을 찾는다.
-    jolt(z>TAU)가 후반에 없으면 세 신호의 후반 최대 스파이크, 그것도 약하면(z<3) CCD 중앙값 위치(FALLBACK*N)."""
+    """jolt 신호(max3 = 세 z-score의 프레임별 최대)에서 최대값에 앵커한 뒤, 앞쪽 GAP 프레임 안에 또 다른 jolt(z>TAU)가
+    있으면 그쪽으로 옮겨 가며 시작점을 찾는다. 위치 사전정보(후반부 제한)는 쓰지 않는다(제출 12 LB -0.075)."""
     n = len(zv)
     if n < 3:
         return n - 1
     scale = (n / _S2_REF_N) if _S2_SCALE_BY_N else 1.0
     gap = max(1, int(round(_S2_GAP * scale)))
     start = min(int(_S2_SEARCH_FROM * n), n - 1)
-    zv_late = zv[start:]
-    if zv_late.max() < _S2_TAU:
+    base = np.maximum.reduce([zs, zv, zd]) if _S2_JOLT_MODE == "max3" else zv
+    late = base[start:]
+    if late.max() < _S2_TAU:
         comb = np.maximum.reduce([zs, zv, zd])[start:]
         if comb.max() < 3.0:
             return min(int(round(_S2_FALLBACK * n)), n - 1)
         return start + int(np.argmax(comb))
-    i = start + int(np.argmax(zv_late))
+    i = start + int(np.argmax(late))
     while True:
         lo = max(i - gap, start, 1)
-        prev = [j for j in range(lo, i) if zv[j] > _S2_TAU]
+        prev = [j for j in range(lo, i) if base[j] > _S2_TAU]
         if not prev:
             return i
         i = prev[0]
