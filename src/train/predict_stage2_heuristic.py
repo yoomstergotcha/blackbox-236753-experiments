@@ -25,9 +25,10 @@ _S2_PRE_LO, _S2_PRE_HI = 12, 2  # 충돌 직전 접근 구간 [c-12, c-2): 접�
 # EXP-S2-HEUR-002 (CCD 사전정보): 공개 5클립 = CCD(Car Crash Dataset, MIT) 000001~000005이고 충돌 라벨 = CCD 첫 사고 프레임.
 # CCD 1,500클립의 사고 onset은 50프레임 중 30~49(중앙값 36, 10퍼센타일 30) -> 검색을 클립 후반(0.55N 이후)으로 제한,
 # jolt가 없으면 0.72N(=36). 위 상수들은 50프레임/10fps 기준이며 클립이 5초라는 가정 아래 프레임 수 N에 비례해 스케일한다.
-_S2_SEARCH_FROM = 0.55
+_S2_SEARCH_FROM = 0.0  # LB 실측(제출 12: 0.250->0.175)으로 후반부 제한 폐기 -> 0.0 = 전체 검색(HEUR-001 동작)
 _S2_FALLBACK = 0.72
 _S2_REF_N = 50
+_S2_SCALE_BY_N = False  # N 비례 스케일도 폐기(HEUR-001 고정 프레임 값)
 
 
 def _s2_frame_number(path: Path) -> int:
@@ -68,7 +69,7 @@ def _s2_collision_index(zs, zv, zd) -> int:
     n = len(zv)
     if n < 3:
         return n - 1
-    scale = n / _S2_REF_N
+    scale = (n / _S2_REF_N) if _S2_SCALE_BY_N else 1.0
     gap = max(1, int(round(_S2_GAP * scale)))
     start = min(int(_S2_SEARCH_FROM * n), n - 1)
     zv_late = zv[start:]
@@ -100,7 +101,7 @@ def _s2_left_fraction(energy: np.ndarray) -> float:
 
 
 def _s2_pre_window(gray, c: int):
-    scale = len(gray) / _S2_REF_N
+    scale = (len(gray) / _S2_REF_N) if _S2_SCALE_BY_N else 1.0
     return c - max(2, int(round(_S2_PRE_LO * scale))), c - max(1, int(round(_S2_PRE_HI * scale)))
 
 
@@ -138,7 +139,7 @@ def predict_stage2(data_dir, model_dir):
             side, evasion = _s2_entry_side(gray, c), _s2_evasion_space(gray, c)
         except Exception:
             c, side, evasion = len(paths) - 1, "LEFT", 1
-        scale = len(paths) / _S2_REF_N
+        scale = (len(paths) / _S2_REF_N) if _S2_SCALE_BY_N else 1.0
         e = max(c - max(1, int(round(_S2_ENTRY_OFFSET * scale))), 0)
         rows.append({"ID": folder.name, "collision_frame": int(numbers[c]), "entry_frame": int(numbers[e]), "evasion_space": int(evasion), "entry_side": side})
     return pd.DataFrame(rows, columns=["ID", "collision_frame", "entry_frame", "evasion_space", "entry_side"])
