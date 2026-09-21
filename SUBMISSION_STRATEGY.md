@@ -169,6 +169,11 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - CCD 영상 확보 후 실측: 현행 검출기는 CCD ego 클립에서 0.565(±3프레임)인데 LB 역산 적중은 ~0.30 → 비공개 클립은 사후 충격을 포함한 긴 구간. 시뮬레이션에서 global-max는 0.36으로 무너지고 earliest-burst(z>8, 길이≥2)는 0.45 유지 → 채택. 진입방향은 23클립 수동 라벨에서 모든 cue가 코인플립(52~65%, n 작음) → 현행 유지. 상세 §22.
 - `submit_v16.zip`(207MB, MD5 `e4e2a0f8f6dd1ec232a3727bee729c89`): v13과 Stage2만 다름.
 
+### 제출 17·18 (2026-09-21)
+- **v17** (`submit_v17.zip` 207MB, MD5 `9244c16f95e484060473fca57c655d7c`): Stage1 = `EXP-S1-SYNTH-008` — ORIGINAL 클래스에 CCD 실제 원본 400클립, 같은 클립의 합성 재녹화(mpeg4/h264 재인코딩) 쌍. LOPO 1.0/AUC 1.0, thr 0.5. Stage2는 v16 상태(S2 무관), Stage3 v13.
+- **v18** (`submit_v18.zip`, MD5 `3564a69bd9c1aeac87483fcf23e11221`): Stage3 = 5-seed + seed별 bias. official 50행 0.759(bias가 OPEN route에선 손해, 내부 val은 이득) → v15 결과 보고 결정.
+- Stage1 시간축 단서(`EXP-S1-TEMPORAL-001`)는 분리력 없음 → 폐기.
+
 ### 그 다음 (예정)
 - LB로 v7(S1)·v8(S2) 확인 후 채택분을 합친 v9. Stage2: 사고 시점/진입 방향 라벨이 있는 외부 데이터셋 라이선스 조사 재개(DoTA/CCD/DAD/Nexar). Stage3: 1D temporal conv, backbone 부분 unfreeze.
 - Stage1: 보류(v4 0.4237). 재개 조건: 비공개 재녹화 외형에 대한 새 가설(예: 코덱/해상도/fps 재인코딩, 프레임 중복·깜빡임 등 시간축 흔적)이 생겼을 때 1슬롯 프로브.
