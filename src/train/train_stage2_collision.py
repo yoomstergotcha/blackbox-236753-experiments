@@ -63,17 +63,30 @@ def soft_target(n: int, onset: int, sigma: float = 1.5) -> np.ndarray:
     return np.exp(-0.5 * ((t - onset) / sigma) ** 2).astype(np.float32)
 
 
-def augment(x: np.ndarray, onset: int, pool: list[np.ndarray], rng: np.random.Generator):
-    """시간축 증강: 앞/뒤에 다른 클립 구간(사고 없는 앞부분 25프레임)을 붙이거나 2배 스트레치(프레임 반복)."""
+def augment(x: np.ndarray, onset: int, pool: list[np.ndarray], rng: np.random.Generator, strength: float = 1.0):
+    """시간축 증강: 앞/뒤에 다른 클립 구간을 붙이거나 2배 스트레치(프레임 반복). strength>1이면 앞뒤 동시·더 긴 구간(최대 50프레임)·사후 구간 포함."""
     r = rng.random()
-    if r < 0.35:
-        other = pool[int(rng.integers(len(pool)))][:25]
-        x, onset = np.concatenate([other, x]), onset + len(other)
-    elif r < 0.6:
-        other = pool[int(rng.integers(len(pool)))][:25]
-        x = np.concatenate([x, other])
-    elif r < 0.75:
-        x, onset = np.repeat(x, 2, axis=0), onset * 2
+    if strength <= 1.0:
+        if r < 0.35:
+            other = pool[int(rng.integers(len(pool)))][:25]
+            x, onset = np.concatenate([other, x]), onset + len(other)
+        elif r < 0.6:
+            other = pool[int(rng.integers(len(pool)))][:25]
+            x = np.concatenate([x, other])
+        elif r < 0.75:
+            x, onset = np.repeat(x, 2, axis=0), onset * 2
+        return x, onset
+    if r < 0.85:
+        if rng.random() < 0.7:  # 앞: 다른 클립의 사고 전 구간(0~30) 또는 전체
+            o = pool[int(rng.integers(len(pool)))]
+            seg = o[: int(rng.integers(10, 51))] if rng.random() < 0.6 else o[25:]
+            x, onset = np.concatenate([seg, x]), onset + len(seg)
+        if rng.random() < 0.7:  # 뒤: 다른 클립의 사고 구간 포함(사후 충격 시뮬)
+            o = pool[int(rng.integers(len(pool)))]
+            seg = o[int(rng.integers(0, 30)) :] if rng.random() < 0.6 else o[:25]
+            x = np.concatenate([x, seg])
+        if rng.random() < 0.2:
+            x, onset = np.repeat(x, 2, axis=0), onset * 2
     return x, onset
 
 
@@ -112,6 +125,7 @@ def main() -> None:
     ap.add_argument("--hidden", type=int, default=96)
     ap.add_argument("--no-app", action="store_true", help="ResNet 특징 제외(모션·신호만)")
     ap.add_argument("--no-aug", action="store_true")
+    ap.add_argument("--aug-strength", type=float, default=1.0)
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--seed", type=int, default=20260825)
     args = ap.parse_args()
@@ -154,7 +168,7 @@ def main() -> None:
                 for i in order[s : s + args.batch]:
                     x, o = tr_seqs[i]
                     if not args.no_aug:
-                        x, o = augment(x, o, pool, rng)
+                        x, o = augment(x, o, pool, rng, args.aug_strength)
                     items.append((x, soft_target(len(x), o)))
                 X, Y, M = collate(items, device)
                 logits = model(X)

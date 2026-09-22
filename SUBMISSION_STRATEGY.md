@@ -174,6 +174,12 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - **v18** (`submit_v18.zip`, MD5 `3564a69bd9c1aeac87483fcf23e11221`): Stage3 = 5-seed + seed별 bias. official 50행 0.759(bias가 OPEN route에선 손해, 내부 val은 이득) → v15 결과 보고 결정.
 - Stage1 시간축 단서(`EXP-S1-TEMPORAL-001`)는 분리력 없음 → 폐기.
 
+### 제출 19: Stage2 = 학습 기반 충돌 localizer (EXP-S2-LEARN-001) — **완료, 제출 대기** (2026-09-22)
+
+- CCD ego 796클립 onset 라벨로 BiGRU localizer 학습(소스 단위 5-fold). OOF ±3프레임 **0.771** (휴리스틱 0.565~0.595). 긴 클립 시뮬 0.47(휴리스틱 0.36). entry = 충돌 −7(수동 라벨 64클립 중앙값). 상세 [EXPERIMENT_DESIGN.md §23](EXPERIMENT_DESIGN.md).
+- `submit_v19.zip`(212MB, 27조각, MD5 `caa2d2f9f6e327550d7c44015fc46cd6`): Stage1 v4, Stage3 v13, Stage2만 교체.
+- 알려진 약점: 완만한 충돌에서 마지막 프레임을 고르는 경향(공개 000002/000005) → 디코딩 규칙 개선·강한 증강 변형(LEARN-002) 진행 중.
+
 ### 그 다음 (예정)
 - LB로 v7(S1)·v8(S2) 확인 후 채택분을 합친 v9. Stage2: 사고 시점/진입 방향 라벨이 있는 외부 데이터셋 라이선스 조사 재개(DoTA/CCD/DAD/Nexar). Stage3: 1D temporal conv, backbone 부분 unfreeze.
 - Stage1: 보류(v4 0.4237). 재개 조건: 비공개 재녹화 외형에 대한 새 가설(예: 코덱/해상도/fps 재인코딩, 프레임 중복·깜빡임 등 시간축 흔적)이 생겼을 때 1슬롯 프로브.
