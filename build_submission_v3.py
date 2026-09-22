@@ -26,7 +26,7 @@ _ap.add_argument("--stage1-snippet", type=Path, default=None, help="Stage1 추�
 _ap.add_argument("--stage2-snippet", type=Path, default=None, help="Stage2 추론 snippet 교체(기본: 공식 baseline 셀)")
 _ap.add_argument("--stage3-extra-ckpt", type=Path, nargs="*", default=[], help="Stage3 앙상블 멤버 best.pt들 (model/stage3/best_1.pt ...로 복사)")
 _ap.add_argument("--stage2-extra", type=Path, nargs="*", default=[], help="model/stage2/ 에 추가 복사할 파일(학습 localizer fold*.pt 등)")
-_ap.add_argument("--stage2-extra-dir", type=Path, nargs="*", default=[], help="model/stage2/<dirname>/ 로 통째로 복사할 디렉터리(VLM 스냅샷 등)")
+_ap.add_argument("--stage2-extra-dir", nargs="*", default=[], help="model/stage2/<name>/ 로 통째로 복사할 디렉터리, '경로=이름' 형식(이름 생략 시 디렉터리명)")
 _ap.add_argument("--stage3-snippet", type=Path, default=None, help="Stage3 추론 snippet 교체(기본 predict_stage3_comma2k19.py)")
 _args = _ap.parse_args()
 STAGE1_CHECKPOINT = _args.stage1_ckpt
@@ -72,8 +72,9 @@ def stage_model_files() -> Path:
         shutil.copy2(extra, model_dir / "stage3" / f"best_{i}.pt")
     for extra in _args.stage2_extra:
         shutil.copy2(extra, model_dir / "stage2" / extra.name)
-    for d in _args.stage2_extra_dir:
-        shutil.copytree(d, model_dir / "stage2" / d.name, ignore=shutil.ignore_patterns(".cache", "*.md", "*.incomplete"))
+    for spec in _args.stage2_extra_dir:
+        src, _, name = spec.partition("=")
+        shutil.copytree(Path(src), model_dir / "stage2" / (name or Path(src).name), ignore=shutil.ignore_patterns(".cache", "*.md", "*.incomplete"))
     if _args.stage1_mode == "baseline":
         shutil.copytree(src_v2 / "stage1", model_dir / "stage1")
     else:

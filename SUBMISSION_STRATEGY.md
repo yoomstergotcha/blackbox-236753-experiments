@@ -192,6 +192,14 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - 규칙: 해상도≠1280×720 또는 fps≠10 → RERECORDED. `submit_v21.zip`(236MB, 30조각, MD5 `fc9ad4dd616f47923d6704243d8a4b2c`), Stage2/3은 v20과 바이트 동일.
 - 해석: S1 ≈ 0.405 → 규격 정규화(시각/시간 단서만 남음) / 0.6↑ → 규격이 곧 라벨(그대로 채택·보강) / 0.405 미만 → ORIGINAL 규격이 다양(CCD 규격 가정 폐기).
 
+### 제출 22: VLM(Qwen2-VL-2B) Stage1 화면 재촬영 판별 + Stage2 진입방향/회피공간 — **완료, 업로드 중** (2026-09-22)
+
+- 평가 서버(L40S 44GB, 60분, zip 10GB, transformers 4.57.6 기본)에 맞춰 Apache-2.0 소형 VLM을 동봉. 학습 없음(zero-shot log-prob 비교), 고정 임계.
+- Stage2: 수동 라벨에서 방향 LOO acc **0.66**(현행 규칙 0.49), 회피 LOO macroF1 **0.77**(현행 0.47). collision/entry는 v20과 동일 → S2 델타 = side/evasion 효과.
+- Stage1: 테두리·원근형 재촬영은 AUC 0.94로 잡고 순수 재인코딩은 못 잡음. 비공개 재촬영본이 실제 화면 촬영이면 유효 → 프로브. 하방은 상수(0.405) 수준.
+- `submit_v22.zip`(4453MB, ~557조각, MD5 `a182475abf4eef1db322c263a7ed8e67`). 조각이 많으니 `cat submit_v22.zip.part* > submit_v22.zip` 후 MD5 확인 필수.
+- 제출 순서 권장: v19 → v20 → v22 (S2), v21 → v22 (S1). v22의 S1이 0.405 근처면 비공개 재촬영본은 시각적으로도 원본과 구분 어려움 → Stage1은 시간축/코덱 통계 쪽으로 전환.
+
 ### 그 다음 (예정)
 - LB로 v7(S1)·v8(S2) 확인 후 채택분을 합친 v9. Stage2: 사고 시점/진입 방향 라벨이 있는 외부 데이터셋 라이선스 조사 재개(DoTA/CCD/DAD/Nexar). Stage3: 1D temporal conv, backbone 부분 unfreeze.
 - Stage1: 보류(v4 0.4237). 재개 조건: 비공개 재녹화 외형에 대한 새 가설(예: 코덱/해상도/fps 재인코딩, 프레임 중복·깜빡임 등 시간축 흔적)이 생겼을 때 1슬롯 프로브.

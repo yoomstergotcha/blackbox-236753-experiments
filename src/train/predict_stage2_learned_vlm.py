@@ -24,9 +24,11 @@ _L2_W, _L2_H = 320, 180
 _L2_ENTRY_OFFSET = 7
 _L2_VLM_DIR = "qwen2vl"
 _L2_VLM_NF, _L2_VLM_W, _L2_VLM_SPAN = 8, 448, 14
-_L2_VLM_SIDE_THR, _L2_VLM_EVA_THR = 0.0, 0.0  # 로컬 수동 라벨(CCD ego 53/64클립)로 보정한 고정 상수
+_L2_VLM_SIDE_THR = 1.375  # 수동 라벨 53클립 점수 중앙값(LOO acc 0.66); 모델이 LEFT로 치우쳐 0이 아닌 고정 상수 사용
+_L2_EVA_M1, _L2_EVA_S1, _L2_EVA_M2, _L2_EVA_S2, _L2_EVA_THR = -1.1012, 0.1585, 0.0337, 0.1171, -1.23  # 63클립 z-정규화 상수·임계(LOO macroF1 0.77)
 _L2_Q_SIDE = "This is a dashcam video from the ego car, ending at the moment it collides with another vehicle. From which side of the screen did that other vehicle come into the ego car's path? Answer with exactly one word: LEFT or RIGHT."
-_L2_Q_EVA = "This is a dashcam video from the ego car, ending at the moment it collides with another vehicle. At that moment, did the ego car have free space to steer away or keep going, such as an open adjacent lane or shoulder without other vehicles, barriers, curbs or medians? Answer with exactly one word: YES or NO."
+_L2_Q_EVA_IMG = "This dashcam image shows the moment the camera car collides with another vehicle. Is there an open lane or free road space right next to the camera car where it could have steered to avoid the crash? Answer with exactly one word: YES or NO."
+_L2_Q_EVA_VID = "This is a dashcam video ending at a collision. Just before the collision, was there empty road space to the left or right of the camera car (no other vehicle, wall, barrier or curb blocking it)? Answer with exactly one word: YES or NO."
 _L2_TAIL_EXCLUDE = 3  # 마지막 3프레임은 충돌 후보에서 제외(CCD OOF 0.771→0.793; 학습셋 onset 97% 가 N-3 이전)
 _L2_PRE_LO, _L2_PRE_HI = 12, 2
 _L2_IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
@@ -145,28 +147,29 @@ def _l2_vlm_load(model_dir, device):
     return model, AutoProcessor.from_pretrained(d)
 
 
+def _l2_vlm_frame(path):
+    bgr = cv2.imread(str(path), cv2.IMREAD_COLOR)
+    if bgr is None:
+        bgr = np.zeros((720, 1280, 3), np.uint8)
+    h, w = bgr.shape[:2]
+    s = _L2_VLM_W / w
+    return cv2.cvtColor(cv2.resize(bgr, (_L2_VLM_W, max(28, int(round(h * s / 28)) * 28))), cv2.COLOR_BGR2RGB)
+
+
 def _l2_vlm_frames(paths, c):
     idx = np.linspace(max(c - _L2_VLM_SPAN, 0), min(c + 1, len(paths) - 1), _L2_VLM_NF).round().astype(int)
-    out = []
-    for i in idx:
-        bgr = cv2.imread(str(paths[i]), cv2.IMREAD_COLOR)
-        if bgr is None:
-            bgr = np.zeros((720, 1280, 3), np.uint8)
-        h, w = bgr.shape[:2]
-        s = _L2_VLM_W / w
-        bgr = cv2.resize(bgr, (_L2_VLM_W, max(28, int(round(h * s / 28)) * 28)), interpolation=cv2.INTER_AREA)
-        out.append(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
-    return np.stack(out)
+    return np.stack([_l2_vlm_frame(paths[i]) for i in idx])
 
 
-def _l2_vlm_logprobs(vlm, device, video, question, cands):
+def _l2_vlm_logprobs(vlm, device, media, question, cands, kind="video"):
     model, proc = vlm
-    msgs = [{"role": "user", "content": [{"type": "video"}, {"type": "text", "text": question}]}]
+    msgs = [{"role": "user", "content": [{"type": kind}, {"type": "text", "text": question}]}]
     text = proc.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
-    n_prompt = proc(text=[text], videos=[video], return_tensors="pt")["input_ids"].shape[1]
+    kw = {"videos": [media]} if kind == "video" else {"images": [media]}
+    n_prompt = proc(text=[text], return_tensors="pt", **kw)["input_ids"].shape[1]
     out = []
     for cand in cands:
-        full = proc(text=[text + cand], videos=[video], return_tensors="pt").to(device)
+        full = proc(text=[text + cand], return_tensors="pt", **kw).to(device)
         logits = model(**full).logits[0].float()
         ids = full["input_ids"][0]
         out.append(torch.log_softmax(logits[n_prompt - 1 : -1], -1).gather(1, ids[n_prompt:, None]).sum().item())
@@ -176,8 +179,10 @@ def _l2_vlm_logprobs(vlm, device, video, question, cands):
 def _l2_vlm_side_evasion(vlm, device, paths, c):
     video = _l2_vlm_frames(paths, c)
     ls = _l2_vlm_logprobs(vlm, device, video, _L2_Q_SIDE, ["LEFT", "RIGHT"])
-    le = _l2_vlm_logprobs(vlm, device, video, _L2_Q_EVA, ["YES", "NO"])
-    return ("LEFT" if ls[0] - ls[1] > _L2_VLM_SIDE_THR else "RIGHT"), (1 if le[0] - le[1] > _L2_VLM_EVA_THR else 0)
+    l1 = _l2_vlm_logprobs(vlm, device, _l2_vlm_frame(paths[min(c, len(paths) - 1)]), _L2_Q_EVA_IMG, ["YES", "NO"], kind="image")  # 충돌 프레임 단일 이미지
+    l2 = _l2_vlm_logprobs(vlm, device, video, _L2_Q_EVA_VID, ["YES", "NO"])
+    eva = ((l1[0] - l1[1]) - _L2_EVA_M1) / _L2_EVA_S1 + ((l2[0] - l2[1]) - _L2_EVA_M2) / _L2_EVA_S2
+    return ("LEFT" if ls[0] - ls[1] > _L2_VLM_SIDE_THR else "RIGHT"), (1 if eva > _L2_EVA_THR else 0)
 
 
 def predict_stage2(data_dir, model_dir):
