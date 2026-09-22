@@ -37,7 +37,15 @@ def load_ann(path: Path) -> pd.DataFrame:
 
 def load_feats(feat_dir: Path, vid: str, use_app: bool, extra: tuple[str, ...] = ()) -> np.ndarray:
     z = np.load(feat_dir / f"{vid}.npz")
-    parts = [z["signals"], z["motion"]] + [z[k].astype(np.float32) for k in extra]
+    parts = [z["signals"], z["motion"]]
+    for k in extra:
+        if k == "mz":  # 클립 내 robust z (모션 13-d): 카메라/장면별 스케일 차이 제거
+            m = z["motion"].astype(np.float32)
+            med = np.median(m, 0)
+            mad = np.median(np.abs(m - med), 0) * 1.4826 + 1e-6
+            parts.append((m - med) / mad)
+        else:
+            parts.append(z[k].astype(np.float32))
     if use_app:
         parts.append(z["app"].astype(np.float32))
     return np.concatenate(parts, 1).astype(np.float32)
