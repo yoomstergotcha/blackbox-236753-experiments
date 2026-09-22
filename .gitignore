@@ -26,3 +26,8 @@ data/stage1/**/*.mp4
 data/stage2/**/*.mp4
 data/stage3/**/*.mp4
 data/external/comma2k19_example/segment/video.hevc
+
+# CCD 영상(0.79GB, dataset_registry.csv 출처에서 재획득) / 유튜브 원본
+data/external/ccd/*.mp4
+data/external/ccd/*.zip
+data/external/ccd_src/
