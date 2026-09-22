@@ -839,4 +839,11 @@ MOTION-001b 채택 → **제출 후보 6**(`submit_v6.zip`, Stage1 v4·Stage2 ba
 - `EXP-S2-LEARN-001`: BiGRU localizer. **no-app(모션·신호 19-d) OOF 0.771** > full 0.706 > no-aug 0.727; 휴리스틱 0.565~0.595. 시간축 증강(이어붙이기/스트레치)이 +0.04.
 - 수동 라벨 64클립(§ EXP-S2-LABEL-001): 진입 오프셋 중앙값 −7프레임(10fps) → entry = collision − 7. 진입방향은 검출기 트랙 규칙 9종 모두 코인플립 → 보류. 회피공간 1 비율 0.70.
 - 제출 후보 19: Stage2 = localizer 5-fold 앙상블 + entry −7 + 현행 side/evasion (Stage1 v4, Stage3 v13).
-- 다음: 긴 클립 시뮬레이션에서 localizer 강건성 확인, 지연 오차 꼬리(사후 argmax) 억제(점수 smoothing/이른 피크 선호), 방향·회피 학습은 라벨 확장 후.
+- 강건성/스위프(2026-09-22, `EXP-S2-LEARN-002~007`, `EXP-S2-DECODE-001`):
+  - 강한 증강(002): 긴 클립 시뮬 after/before_after 0.47→0.65/0.63이지만 원본 OOF 0.771→0.737. 비공개가 공개와 같은 50프레임 CCD형이면 손해 → 미채택(LB로 길이 가설이 뒤집히면 hedge로 사용).
+  - 시드/σ/hidden 스위프: 전부 OOF 0.774~0.778 → 특징 한계. 공간 격자 흐름 48-d 추가(007)는 0.746~0.760으로 **손해**.
+  - 디코딩: CCD onset 분위 5/50/95 = 30/37/48, onset≥N−3 비율 0.092인데 argmax가 마지막 3프레임에 찍히는 비율 0.156(끝 위치 사전정보 학습) → **마지막 3프레임 제외 argmax 0.771→0.793**. 첫 피크/스무딩/꼬리 감쇠는 열세.
+  - 5모델(001+시드2+σ2.5+h128)×5fold 앙상블 + tail3: **OOF 0.803**, 공개 4/5. → 제출 후보 20 (Stage1/3 v19와 동일).
+- Stage1 관찰(`EXP-S1-PROBE-002`): 공개 RERECORDED는 원본과 프레임 동일(평균 절대차 5.1)인 순수 재인코딩. 공식 정의('화면을 다시 촬영')·단서 목록과 다름. 합성 재촬영 학습 v1~v8이 전부 LB 0.42~0.45 → 비공개 재촬영본은 테두리류 단서가 없거나 224px CNN에서 소실. 구조 확인용 메타데이터 프로브(해상도≠1280×720 또는 fps≠10 → RERECORDED) = 제출 후보 21.
+- 평가 서버: L40S 44GB, 60분, zip 10GB, transformers 4.57.6/accelerate/ultralytics 기본 탑재 → 소형 VLM(Qwen2-VL-2B, Apache-2.0, 4.4GB) 동봉 가능. 진입방향/회피공간(수동 라벨 53/64) zero-shot 적중률과 Stage1 '화면 재촬영' 판별을 로컬에서 검증 중.
+- 다음: VLM 검증 결과에 따라 side/evasion 교체(v22), v19/v20 LB로 학습 localizer·길이 가설 판정, v21로 Stage1 규격 구조 판정.
