@@ -1,7 +1,7 @@
 """공식 inference.py에 붙여넣을 Stage2 predict 함수 — EXP-S2-LEARN-001 (CCD 사고 프레임 라벨로 학습한 충돌 localizer).
 
 구성:
-  - collision_frame: 프레임별 [전역 이동 3신호 + robust z 3 + Farneback 13 + ResNet18 512] 시퀀스 → BiGRU(5-fold 앙상블 평균) 점수 argmax.
+  - collision_frame: 프레임별 [전역 이동 3신호 + robust z 3 + Farneback 13 (+ ResNet18 512)] 시퀀스 → BiGRU(fold/seed 앙상블 평균) 점수 argmax(마지막 3프레임 제외).
     model/stage2/ 에 fold*.pt (train_stage2_collision.py 출력) 와 resnet18-f37072fd.pth(베이스라인 zip 동봉, ImageNet)가 있어야 한다.
   - entry_frame: collision - 7프레임 (CCD ego 40클립 수동 라벨 중앙값 -7, 10fps 기준)
   - entry_side / evasion_space: predict_stage2_heuristic.py와 동일한 영상 내부 규칙(방향은 신뢰할 단서가 없어 상대 좌측비율 유지).
@@ -19,6 +19,7 @@ from torchvision.models import resnet18
 
 _L2_W, _L2_H = 320, 180
 _L2_ENTRY_OFFSET = 7
+_L2_TAIL_EXCLUDE = 3  # 마지막 3프레임은 충돌 후보에서 제외(CCD OOF 0.771→0.793; 학습셋 onset 97% 가 N-3 이전)
 _L2_PRE_LO, _L2_PRE_HI = 12, 2
 _L2_IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
 _L2_IMAGENET_STD = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
@@ -135,7 +136,7 @@ def predict_stage2(data_dir, model_dir):
     mean, std = _L2_IMAGENET_MEAN.to(device), _L2_IMAGENET_STD.to(device)
     folds = []
     use_app = True
-    for pth in sorted(model_dir.glob("fold*.pt")):
+    for pth in sorted(model_dir.glob("*fold*.pt")):
         ck = torch.load(pth, map_location="cpu", weights_only=False)
         m = _L2Localizer(ck["config"]["in_dim"], ck["config"]["hidden"], ck["config"]["dropout"])
         m.load_state_dict(ck["model"])
@@ -169,7 +170,7 @@ def predict_stage2(data_dir, model_dir):
                     parts.append(np.concatenate(feats))
                 seq = torch.from_numpy(np.concatenate(parts, 1))[None].to(device)
                 score = np.mean([m(seq)[0].float().cpu().numpy() for m in folds], 0) if folds else -_l2_robust_z(motion[:, 12])
-                c = int(np.argmax(score))
+                c = int(np.argmax(score[: max(len(score) - _L2_TAIL_EXCLUDE, 1)]))
                 side, evasion = _l2_side_evasion(g320, c)
             except Exception:
                 c, side, evasion = len(paths) - 1, "LEFT", 1

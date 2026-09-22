@@ -35,9 +35,9 @@ def load_ann(path: Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def load_feats(feat_dir: Path, vid: str, use_app: bool) -> np.ndarray:
+def load_feats(feat_dir: Path, vid: str, use_app: bool, extra: tuple[str, ...] = ()) -> np.ndarray:
     z = np.load(feat_dir / f"{vid}.npz")
-    parts = [z["signals"], z["motion"]]
+    parts = [z["signals"], z["motion"]] + [z[k].astype(np.float32) for k in extra]
     if use_app:
         parts.append(z["app"].astype(np.float32))
     return np.concatenate(parts, 1).astype(np.float32)
@@ -127,21 +127,25 @@ def main() -> None:
     ap.add_argument("--no-aug", action="store_true")
     ap.add_argument("--aug-strength", type=float, default=1.0)
     ap.add_argument("--folds", type=int, default=5)
+    ap.add_argument("--sigma", type=float, default=1.5, help="soft label 가우시안 폭(프레임)")
     ap.add_argument("--seed", type=int, default=20260825)
+    ap.add_argument("--split-seed", type=int, default=20260825, help="fold 분할 시드(시드 앙상블 OOF 비교를 위해 고정)")
+    ap.add_argument("--extra", nargs="*", default=[], help="npz에서 추가로 이어붙일 키(예: grid)")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     torch.manual_seed(args.seed)
     rng = np.random.default_rng(args.seed)
+    split_rng = np.random.default_rng(args.split_seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     ann = load_ann(args.ann)
     ann = ann[ann.ego & (ann.onset >= 0)]
     ann = ann[[(args.feats / f"{v}.npz").is_file() for v in ann.vid]]
     public = {"000001", "000002", "000003", "000004", "000005"}
-    data = {v: (load_feats(args.feats, v, not args.no_app), int(o)) for v, o in zip(ann.vid, ann.onset)}
+    data = {v: (load_feats(args.feats, v, not args.no_app, tuple(args.extra)), int(o)) for v, o in zip(ann.vid, ann.onset)}
     train_pool = ann[~ann.vid.isin(public)].reset_index(drop=True)
     srcs = train_pool.src.to_numpy()
-    fold_of = {s: i % args.folds for i, s in enumerate(rng.permutation(sorted(set(srcs))))}
+    fold_of = {s: i % args.folds for i, s in enumerate(split_rng.permutation(sorted(set(srcs))))}
     train_pool["fold"] = [fold_of[s] for s in srcs]
     print(f"ego clips {len(train_pool)} | sources {len(set(srcs))} | in_dim {next(iter(data.values()))[0].shape[1]}")
 
@@ -169,7 +173,7 @@ def main() -> None:
                     x, o = tr_seqs[i]
                     if not args.no_aug:
                         x, o = augment(x, o, pool, rng, args.aug_strength)
-                    items.append((x, soft_target(len(x), o)))
+                    items.append((x, soft_target(len(x), o, args.sigma)))
                 X, Y, M = collate(items, device)
                 logits = model(X)
                 loss = (nn.functional.binary_cross_entropy_with_logits(logits, Y, reduction="none") * M).sum() / M.sum()
@@ -186,7 +190,7 @@ def main() -> None:
         fold_hits.append(h)
         for v, p in zip(va.vid, preds):
             oof[v] = p
-        torch.save({"model": best_state, "config": model.cfg}, args.out / f"fold{k}.pt")
+        torch.save({"model": best_state, "config": {**model.cfg, "extra": list(args.extra), "no_app": bool(args.no_app)}}, args.out / f"fold{k}.pt")
         print(f"fold {k}: val hit(±3) {h:.3f} (n={len(va)})", flush=True)
     err = np.array([oof[v] - data[v][1] for v in train_pool.vid])
     print(f"OOF hit(±3) = {np.mean(np.abs(err) <= 3):.3f} | mean fold {np.mean(fold_hits):.3f} | err percentiles 5/25/50/75/95: {np.percentile(err, [5, 25, 50, 75, 95]).astype(int).tolist()}")

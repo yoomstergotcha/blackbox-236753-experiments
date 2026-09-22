@@ -31,3 +31,4 @@ data/external/comma2k19_example/segment/video.hevc
 data/external/ccd/*.mp4
 data/external/ccd/*.zip
 data/external/ccd_src/
+data/external/hf_models/
