@@ -12,7 +12,7 @@ import torch
 
 _S1V_VIDEO_EXT = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v", ".mpg", ".mpeg", ".wmv", ".flv", ".ts", ".3gp"}
 _S1V_K, _S1V_W = 3, 896
-_S1V_THR = 0.0  # 로컬 검증(CCD 원본 vs 합성 재촬영)으로 보정한 고정 상수
+_S1V_THR = -0.5  # CCD 원본 p90 −0.75 / 합성 capture 중앙값 +0.27; 로컬 검증(CCD 원본 vs 합성 재촬영)으로 보정한 고정 상수
 _S1V_Q = ("Is this image a direct recording from a car dashboard camera, or is it a photo of a screen (a monitor, TV or phone display) "
           "that is showing dashcam footage? Look for screen edges or bezels, moire or pixel-grid patterns, reflections or glare on a "
           "display surface, or a tilted perspective of a display. Answer with exactly one word: DIRECT or SCREEN.")

@@ -26,6 +26,7 @@ _ap.add_argument("--stage1-snippet", type=Path, default=None, help="Stage1 추�
 _ap.add_argument("--stage2-snippet", type=Path, default=None, help="Stage2 추론 snippet 교체(기본: 공식 baseline 셀)")
 _ap.add_argument("--stage3-extra-ckpt", type=Path, nargs="*", default=[], help="Stage3 앙상블 멤버 best.pt들 (model/stage3/best_1.pt ...로 복사)")
 _ap.add_argument("--stage2-extra", type=Path, nargs="*", default=[], help="model/stage2/ 에 추가 복사할 파일(학습 localizer fold*.pt 등)")
+_ap.add_argument("--stage2-extra-dir", type=Path, nargs="*", default=[], help="model/stage2/<dirname>/ 로 통째로 복사할 디렉터리(VLM 스냅샷 등)")
 _ap.add_argument("--stage3-snippet", type=Path, default=None, help="Stage3 추론 snippet 교체(기본 predict_stage3_comma2k19.py)")
 _args = _ap.parse_args()
 STAGE1_CHECKPOINT = _args.stage1_ckpt
@@ -71,6 +72,8 @@ def stage_model_files() -> Path:
         shutil.copy2(extra, model_dir / "stage3" / f"best_{i}.pt")
     for extra in _args.stage2_extra:
         shutil.copy2(extra, model_dir / "stage2" / extra.name)
+    for d in _args.stage2_extra_dir:
+        shutil.copytree(d, model_dir / "stage2" / d.name, ignore=shutil.ignore_patterns(".cache", "*.md", "*.incomplete"))
     if _args.stage1_mode == "baseline":
         shutil.copytree(src_v2 / "stage1", model_dir / "stage1")
     else:
@@ -109,7 +112,8 @@ def build_zip(inference_path: Path, model_dir: Path) -> None:
         archive.write(ROOT / "requirements.txt", "requirements.txt")
         for p in sorted(model_dir.rglob("*")):
             if p.is_file():
-                archive.write(p, "model/" + p.relative_to(model_dir).as_posix())
+                big = p.stat().st_size > 64 * 1024**2  # 대형 가중치(safetensors 등)는 압축 생략(시간 절약, 압축률 거의 0)
+                archive.write(p, "model/" + p.relative_to(model_dir).as_posix(), compress_type=zipfile.ZIP_STORED if big else zipfile.ZIP_DEFLATED)
     with zipfile.ZipFile(submit_path) as archive:
         names = archive.namelist()
     required = {"inference.py", "requirements.txt", "model/stage1/best.pt", "model/stage2/best.pt", "model/stage2/resnet18-f37072fd.pth", "model/stage3/best.pt"}
