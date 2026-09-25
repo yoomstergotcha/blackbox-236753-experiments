@@ -6,7 +6,8 @@ CCD 200클립 검증(±0.3s): 원본 10fps 0.765(고정 stride1 0.79), ×3 보�
   collision = 선택 stride에서 argmax(마지막 3프레임 제외) × s → 원본 프레임 번호
   entry     = collision − 7·s (10fps 기준 0.7s; CCD 수동 라벨 중앙값)
   side/evasion = 현행 영상 내부 규칙(창 폭을 s배)
-model/stage2/*fold*.pt (19-d no-app BiGRU localizer, EXP-S2-LEARN-001~005)만 사용 — ResNet 불필요.
+model/stage2/*fold*.pt (19-d BiGRU: LEARN-001~005 + 위치 무작위화 GRU/국소 CNN: INV-002, 총 11모델×5fold)만 사용 — ResNet 불필요.
+4가지 의도적 분포 이동(10/30fps × 짧은/긴 클립) 최저 적중 0.75 (v24의 5모델 0.715).
 """
 import re
 from pathlib import Path
@@ -38,6 +39,30 @@ class _L2Localizer(nn.Module):
     def forward(self, x):
         h, _ = self.gru(self.proj((x - self.in_mean) / self.in_std))
         return self.head(h).squeeze(-1)
+
+
+class _L2LocalCNN(nn.Module):
+    """수용영역 ±30프레임 dilated 1D CNN (EXP-S2-INV-002, 위치 사전정보 없음)."""
+
+    def __init__(self, in_dim: int, hidden: int = 64, dropout: float = 0.2, dilations=(1, 2, 4, 8)):
+        super().__init__()
+        self.register_buffer("in_mean", torch.zeros(in_dim))
+        self.register_buffer("in_std", torch.ones(in_dim))
+        layers = [nn.Conv1d(in_dim, hidden, 1)]
+        for d in dilations:
+            layers += [nn.GELU(), nn.Dropout(dropout), nn.Conv1d(hidden, hidden, 5, padding=2 * d, dilation=d)]
+        self.body = nn.Sequential(*layers)
+        self.head = nn.Conv1d(hidden, 1, 1)
+
+    def forward(self, x):
+        h = self.body(((x - self.in_mean) / self.in_std).transpose(1, 2))
+        return self.head(nn.functional.gelu(h)).squeeze(1)
+
+
+def _l2_build(cfg):
+    if cfg.get("arch") == "cnn" or "dilations" in cfg:
+        return _L2LocalCNN(cfg["in_dim"], cfg["hidden"], cfg["dropout"], tuple(cfg["dilations"]))
+    return _L2Localizer(cfg["in_dim"], cfg["hidden"], cfg["dropout"])
 
 
 def _l2_frame_number(path: Path) -> int:
@@ -157,7 +182,7 @@ def predict_stage2(data_dir, model_dir):
     folds = []
     for pth in sorted(Path(model_dir).glob("*fold*.pt")):
         ck = torch.load(pth, map_location="cpu", weights_only=False)
-        m = _L2Localizer(ck["config"]["in_dim"], ck["config"]["hidden"], ck["config"]["dropout"])
+        m = _l2_build(ck["config"])
         m.load_state_dict(ck["model"])
         folds.append(m.to(device).eval())
     rx, ry = _l2_radial_grid(120, 160)
