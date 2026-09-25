@@ -3,7 +3,7 @@
 # 사용: bash scripts/upload_parts_rev.sh <tag> <zip 경로> <md5>
 set -u
 TAG=$1; ZIP=$2; MD5=$3
-ROOT=$(cd "$(dirname "$0")/.." && pwd); GH="$ROOT/.tools/bin/gh.exe"; REPO=yoomstergotcha/blackbox-236753-experiments; REL=submissions-2026-09-17
+ROOT=$(cd "$(dirname "$0")/.." && pwd); GH="$ROOT/.tools/bin/gh.exe"; REPO=yoomstergotcha/blackbox-236753-experiments; REL=${REL:-submissions-2026-09-25}
 DIR="$ROOT/output/parts_$TAG"; cd "$DIR" || exit 1
 for round in 1 2 3 4 5; do
   "$GH" release view "$REL" --repo "$REPO" --json assets -q '.assets[] | "\(.name) \(.size)"' > "$DIR/.assets_rev" 2>/dev/null || { sleep 30; continue; }
