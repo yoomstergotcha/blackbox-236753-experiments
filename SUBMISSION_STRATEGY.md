@@ -222,6 +222,11 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - `submit_v24.zip`(236MB, MD5 `1baf8d1f550ca291812a275b9eed5564`), Stage1 = v23 역방향 규칙, Stage3 v13. 공개 5클립 출력은 v20과 동일.
 - 다음: v24 + VLM 진입방향/회피공간(v22 S2 결과가 +면) = v25(4.4GB).
 
+### 제출 25: v24 + VLM 진입방향/회피공간 — **완료, 업로드 중** (2026-09-25)
+
+- `submit_v25.zip`(4453MB, 557조각, MD5 `10e9080a56bd6e450082ce84327acc72`, 릴리스 `submissions-2026-09-25`). Stage2 = 프레임률 적응 collision/entry(v24) + Qwen2-VL 진입방향/회피공간(v22 임계, 창 폭 stride 배). Stage1 역방향 규칙, Stage3 v13.
+- 판정: v22(S2 VLM 효과)·v24(S2 프레임률 효과)가 모두 +면 v25가 Stage2 최종 형태.
+
 ### 그 다음 (예정)
 - LB로 v7(S1)·v8(S2) 확인 후 채택분을 합친 v9. Stage2: 사고 시점/진입 방향 라벨이 있는 외부 데이터셋 라이선스 조사 재개(DoTA/CCD/DAD/Nexar). Stage3: 1D temporal conv, backbone 부분 unfreeze.
 - Stage1: 보류(v4 0.4237). 재개 조건: 비공개 재녹화 외형에 대한 새 가설(예: 코덱/해상도/fps 재인코딩, 프레임 중복·깜빡임 등 시간축 흔적)이 생겼을 때 1슬롯 프로브.

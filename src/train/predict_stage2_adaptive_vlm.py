@@ -1,14 +1,14 @@
-"""공식 inference.py에 붙여넣을 Stage2 predict 함수 — 학습 localizer(EXP-S2-LEARN-001~005) + VLM(Qwen2-VL-2B-Instruct, Apache-2.0) 진입방향/회피공간.
+"""공식 inference.py에 붙여넣을 Stage2 predict 함수 — 프레임률 적응 학습 localizer (EXP-S2-FPS-001) + VLM 진입방향/회피공간 (EXP-S2-VLM-001).
 
-model/stage2/qwen2vl/ 에 HF 스냅샷(config, safetensors, tokenizer, preprocessor, chat_template)이 있으면 진입방향·회피공간을 VLM zero-shot
-log-prob 차(LEFT−RIGHT, YES−NO)로 판정하고 고정 임계와 비교한다(파일 간 통계 없음). 없거나 실패하면 기존 규칙으로 폴백.
+model/stage2/qwen2vl/ (Qwen2-VL-2B-Instruct, Apache-2.0)가 있으면 진입방향·회피공간을 zero-shot log-prob 비교(고정 임계)로 판정, 없거나 실패하면 규칙 폴백.
 
-구성:
-  - collision_frame: 프레임별 [전역 이동 3신호 + robust z 3 + Farneback 13 (+ ResNet18 512)] 시퀀스 → BiGRU(fold/seed 앙상블 평균) 점수 argmax(마지막 3프레임 제외).
-    model/stage2/ 에 fold*.pt (train_stage2_collision.py 출력) 와 resnet18-f37072fd.pth(베이스라인 zip 동봉, ImageNet)가 있어야 한다.
-  - entry_frame: collision - 7프레임 (CCD ego 40클립 수동 라벨 중앙값 -7, 10fps 기준)
-  - entry_side / evasion_space: predict_stage2_heuristic.py와 동일한 영상 내부 규칙(방향은 신뢰할 단서가 없어 상대 좌측비율 유지).
-파일 간 통계 없음. 프레임 번호는 파일명 숫자를 그대로 제출.
+비공개 클립의 프레임률·길이는 알 수 없다(공개 예시 50프레임/10fps와 다름이 LB로 확인). stride s∈{1,2,3,4,6}로 프레임을 솎아
+10fps 학습 분포에 맞춘 뒤, 앙상블 점수의 최대값이 가장 큰 stride를 **클립마다** 고른다(파일 간 통계 없음, 고정 상수만 사용).
+CCD 200클립 검증(±0.3s): 원본 10fps 0.765(고정 stride1 0.79), ×3 보간 30fps 0.755(고정 stride1 0.37).
+  collision = 선택 stride에서 argmax(마지막 3프레임 제외) × s → 원본 프레임 번호
+  entry     = collision − 7·s (10fps 기준 0.7s; CCD 수동 라벨 중앙값)
+  side/evasion = 현행 영상 내부 규칙(창 폭을 s배)
+model/stage2/*fold*.pt (19-d no-app BiGRU localizer, EXP-S2-LEARN-001~005)만 사용 — ResNet 불필요.
 """
 import re
 import time
@@ -19,10 +19,14 @@ import numpy as np
 import pandas as pd
 import torch
 from torch import nn
-from torchvision.models import resnet18
 
 _L2_W, _L2_H = 320, 180
 _L2_ENTRY_OFFSET = 7
+_L2_TAIL_EXCLUDE = 3
+_L2_STRIDES = (1, 2, 3)  # CCD 검증 범위; 4·6은 허위 최대값 위험
+_L2_MIN_FRAMES = 16
+_L2_STRIDE_RATIO = 1.5  # stride 1 기본; 다른 stride는 최대 점수가 stride1의 1.5배를 넘을 때만 채택(CCD 200클립: 10fps 0.79 / 합성 30fps 0.715)
+_L2_PRE_LO, _L2_PRE_HI = 12, 2
 _L2_VLM_DIR = "qwen2vl"
 _L2_VLM_NF, _L2_VLM_W, _L2_VLM_SPAN = 8, 448, 14
 _L2_VLM_SIDE_THR = 1.375  # 수동 라벨 53클립 점수 중앙값(LOO acc 0.66); 모델이 LEFT로 치우쳐 0이 아닌 고정 상수 사용
@@ -30,10 +34,6 @@ _L2_EVA_M1, _L2_EVA_S1, _L2_EVA_M2, _L2_EVA_S2, _L2_EVA_THR = -1.1012, 0.1585, 0
 _L2_Q_SIDE = "This is a dashcam video from the ego car, ending at the moment it collides with another vehicle. From which side of the screen did that other vehicle come into the ego car's path? Answer with exactly one word: LEFT or RIGHT."
 _L2_Q_EVA_IMG = "This dashcam image shows the moment the camera car collides with another vehicle. Is there an open lane or free road space right next to the camera car where it could have steered to avoid the crash? Answer with exactly one word: YES or NO."
 _L2_Q_EVA_VID = "This is a dashcam video ending at a collision. Just before the collision, was there empty road space to the left or right of the camera car (no other vehicle, wall, barrier or curb blocking it)? Answer with exactly one word: YES or NO."
-_L2_TAIL_EXCLUDE = 3  # 마지막 3프레임은 충돌 후보에서 제외(CCD OOF 0.771→0.793; 학습셋 onset 97% 가 N-3 이전)
-_L2_PRE_LO, _L2_PRE_HI = 12, 2
-_L2_IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
-_L2_IMAGENET_STD = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
 
 
 class _L2Localizer(nn.Module):
@@ -85,9 +85,9 @@ def _l2_flow_features(prev, nxt, rx, ry) -> np.ndarray:
     )
 
 
-def _l2_load(paths):
-    """(rgb224 (N,224,224,3) uint8, gray320 list float32, gray160 (N,120,160) uint8)"""
-    rgb, g320, g160 = [], [], []
+def _l2_load_gray(paths):
+    """(gray320 list float32 (180,320), gray160 list uint8 (120,160))"""
+    g320, g160 = [], []
     for p in paths:
         bgr = cv2.imread(str(p), cv2.IMREAD_COLOR)
         if bgr is None:
@@ -95,14 +95,7 @@ def _l2_load(paths):
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
         g320.append(cv2.resize(gray, (_L2_W, _L2_H), interpolation=cv2.INTER_AREA).astype(np.float32))
         g160.append(cv2.resize(gray, (160, 120), interpolation=cv2.INTER_AREA))
-        r = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-        h, w = r.shape[:2]
-        s = 224 / min(h, w)
-        nh, nw = max(224, round(h * s)), max(224, round(w * s))
-        r = cv2.resize(r, (nw, nh), interpolation=cv2.INTER_AREA)
-        y, x = (nh - 224) // 2, (nw - 224) // 2
-        rgb.append(r[y : y + 224, x : x + 224])
-    return np.stack(rgb), g320, np.stack(g160)
+    return g320, g160
 
 
 def _l2_signals(g320):
@@ -114,6 +107,16 @@ def _l2_signals(g320):
         shift[i], vert[i] = float(np.hypot(dx, dy)), float(abs(dy))
         diff[i] = float(np.abs(g320[i] - g320[i - 1]).mean())
     return np.stack([shift, vert, diff, _l2_robust_z(shift), _l2_robust_z(vert), _l2_robust_z(diff)], 1).astype(np.float32)
+
+
+def _l2_motion(g160, rx, ry):
+    n = len(g160)
+    motion = np.zeros((n, 13), np.float32)
+    for i in range(n - 1):
+        motion[i] = _l2_flow_features(g160[i], g160[i + 1], rx, ry)
+    if n > 1:
+        motion[n - 1] = motion[n - 2]
+    return motion
 
 
 def _l2_diff_energy(g320, lo, hi):
@@ -128,8 +131,8 @@ def _l2_left_fraction(e):
     return left / (left + right + 1e-6)
 
 
-def _l2_side_evasion(g320, c):
-    lo, hi = c - _L2_PRE_LO, c - _L2_PRE_HI
+def _l2_side_evasion(g320, c, s=1):
+    lo, hi = c - _L2_PRE_LO * s, c - _L2_PRE_HI * s
     pre_e = _l2_diff_energy(g320, lo, hi)
     side = "LEFT" if _l2_left_fraction(pre_e) > _l2_left_fraction(_l2_diff_energy(g320, 0, len(g320))) else "RIGHT"
     col = pre_e.sum(0)
@@ -165,8 +168,8 @@ def _l2_vlm_frame(path):
     return cv2.cvtColor(cv2.resize(bgr, (_L2_VLM_W, max(28, int(round(h * s / 28)) * 28))), cv2.COLOR_BGR2RGB)
 
 
-def _l2_vlm_frames(paths, c):
-    idx = np.linspace(max(c - _L2_VLM_SPAN, 0), min(c + 1, len(paths) - 1), _L2_VLM_NF).round().astype(int)
+def _l2_vlm_frames(paths, c, s=1):
+    idx = np.linspace(max(c - _L2_VLM_SPAN * s, 0), min(c + s, len(paths) - 1), _L2_VLM_NF).round().astype(int)
     return np.stack([_l2_vlm_frame(paths[i]) for i in idx])
 
 
@@ -185,8 +188,8 @@ def _l2_vlm_logprobs(vlm, device, media, question, cands, kind="video"):
     return out
 
 
-def _l2_vlm_side_evasion(vlm, device, paths, c):
-    video = _l2_vlm_frames(paths, c)
+def _l2_vlm_side_evasion(vlm, device, paths, c, s=1):
+    video = _l2_vlm_frames(paths, c, s)
     ls = _l2_vlm_logprobs(vlm, device, video, _L2_Q_SIDE, ["LEFT", "RIGHT"])
     l1 = _l2_vlm_logprobs(vlm, device, _l2_vlm_frame(paths[min(c, len(paths) - 1)]), _L2_Q_EVA_IMG, ["YES", "NO"], kind="image")  # 충돌 프레임 단일 이미지
     l2 = _l2_vlm_logprobs(vlm, device, video, _L2_Q_EVA_VID, ["YES", "NO"])
@@ -194,22 +197,37 @@ def _l2_vlm_side_evasion(vlm, device, paths, c):
     return ("LEFT" if ls[0] - ls[1] > _L2_VLM_SIDE_THR else "RIGHT"), (1 if eva > _L2_EVA_THR else 0)
 
 
+
+def _l2_localize(g320, g160, folds, rx, ry, device):
+    """stride별 앙상블 점수 → stride 1 기본, 최대 점수가 stride1의 1.5배를 넘는 stride만 채택. (collision index, stride)"""
+    n = len(g320)
+    scores = {}
+    for s in _L2_STRIDES:
+        if s != 1 and n // s < _L2_MIN_FRAMES:
+            continue
+        x = np.concatenate([_l2_signals(g320[::s]), _l2_motion(g160[::s], rx, ry)], 1)
+        seq = torch.from_numpy(x)[None].to(device)
+        scores[s] = np.mean([torch.sigmoid(m(seq)[0]).float().cpu().numpy() for m in folds], 0)
+    s = 1
+    for cand in sorted(scores):
+        if cand == 1:
+            continue
+        ref = float(scores[1].max()) * _L2_STRIDE_RATIO if s == 1 else float(scores[s].max())
+        if float(scores[cand].max()) > ref:
+            s = cand
+    score = scores[s]
+    c = int(np.argmax(score[: max(len(score) - _L2_TAIL_EXCLUDE, 1)])) * s
+    return min(c, n - 1), s
+
+
 def predict_stage2(data_dir, model_dir):
     device = _device()
-    model_dir = Path(model_dir)
-    backbone = resnet18(weights=None)
-    backbone.load_state_dict(torch.load(model_dir / "resnet18-f37072fd.pth", map_location="cpu", weights_only=True))
-    backbone.fc = nn.Identity()
-    backbone.to(device).eval()
-    mean, std = _L2_IMAGENET_MEAN.to(device), _L2_IMAGENET_STD.to(device)
     folds = []
-    use_app = True
-    for pth in sorted(model_dir.glob("*fold*.pt")):
+    for pth in sorted(Path(model_dir).glob("*fold*.pt")):
         ck = torch.load(pth, map_location="cpu", weights_only=False)
         m = _L2Localizer(ck["config"]["in_dim"], ck["config"]["hidden"], ck["config"]["dropout"])
         m.load_state_dict(ck["model"])
         folds.append(m.to(device).eval())
-        use_app = ck["config"]["in_dim"] > 19  # 19 = 전역이동 6 + 광류 13 (EXP-S2-LEARN-001 no-app 변형이 최적: OOF 0.771)
     try:
         vlm = _l2_vlm_load(model_dir, device)
     except Exception:
@@ -224,35 +242,18 @@ def predict_stage2(data_dir, model_dir):
                 continue
             numbers = [_l2_frame_number(p) for p in paths]
             try:
-                rgb, g320, g160 = _l2_load(paths)
-                n = len(rgb)
-                motion = np.zeros((n, 13), np.float32)
-                for i in range(n - 1):
-                    motion[i] = _l2_flow_features(g160[i], g160[i + 1], rx, ry)
-                if n > 1:
-                    motion[n - 1] = motion[n - 2]
-                parts = [_l2_signals(g320), motion]
-                if use_app:
-                    feats = []
-                    for s in range(0, n, 64):
-                        x = torch.from_numpy(rgb[s : s + 64]).to(device).permute(0, 3, 1, 2).float() / 255.0
-                        with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=device.type == "cuda"):
-                            f = backbone((x - mean) / std)
-                        feats.append(f.float().cpu().numpy().astype(np.float16).astype(np.float32))
-                    parts.append(np.concatenate(feats))
-                seq = torch.from_numpy(np.concatenate(parts, 1))[None].to(device)
-                score = np.mean([m(seq)[0].float().cpu().numpy() for m in folds], 0) if folds else -_l2_robust_z(motion[:, 12])
-                c = int(np.argmax(score[: max(len(score) - _L2_TAIL_EXCLUDE, 1)]))
-                side, evasion = _l2_side_evasion(g320, c)
+                g320, g160 = _l2_load_gray(paths)
+                c, s = _l2_localize(g320, g160, folds, rx, ry, device)
+                side, evasion = _l2_side_evasion(g320, c, s)
             except Exception:
-                c, side, evasion = len(paths) - 1, "LEFT", 1
+                c, s, side, evasion = len(paths) - 1, 1, "LEFT", 1
             if vlm is not None:
                 try:
-                    side, evasion = _l2_vlm_side_evasion(vlm, device, paths, c)
+                    side, evasion = _l2_vlm_side_evasion(vlm, device, paths, c, s)
                 except Exception:
                     pass
-            e = max(c - _L2_ENTRY_OFFSET, 0)
+            e = max(c - _L2_ENTRY_OFFSET * s, 0)
             rows.append({"ID": folder.name, "collision_frame": int(numbers[c]), "entry_frame": int(numbers[e]), "evasion_space": int(evasion), "entry_side": side})
-    del backbone, folds, vlm
+    del folds, vlm
     torch.cuda.empty_cache()
     return pd.DataFrame(rows, columns=["ID", "collision_frame", "entry_frame", "evasion_space", "entry_side"])
