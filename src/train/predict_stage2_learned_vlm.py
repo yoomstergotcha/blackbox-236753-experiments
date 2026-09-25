@@ -23,6 +23,7 @@ from torchvision.models import resnet18
 
 _L2_W, _L2_H = 320, 180
 _L2_ENTRY_OFFSET = 7
+_L2_VLM_BUDGET_S = 1500  # Stage2 시작 후 이 시간(초)을 넘기면 남은 클립은 VLM 생략(규칙 폴백) — 60분 한도 보호
 _L2_VLM_DIR = "qwen2vl"
 _L2_VLM_NF, _L2_VLM_W, _L2_VLM_SPAN = 8, 448, 14
 _L2_VLM_SIDE_THR = 1.375  # 수동 라벨 53클립 점수 중앙값(LOO acc 0.66); 모델이 LEFT로 치우쳐 0이 아닌 고정 상수 사용
@@ -217,6 +218,7 @@ def predict_stage2(data_dir, model_dir):
     rx, ry = _l2_radial_grid(120, 160)
     image_root = Path(data_dir) / "images"
     rows = []
+    t_start = time.time()
     with torch.inference_mode():
         for folder in sorted(p for p in image_root.iterdir() if p.is_dir()):
             paths = sorted((p for p in folder.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png"}), key=_l2_frame_number)
@@ -246,7 +248,7 @@ def predict_stage2(data_dir, model_dir):
                 side, evasion = _l2_side_evasion(g320, c)
             except Exception:
                 c, side, evasion = len(paths) - 1, "LEFT", 1
-            if vlm is not None:
+            if vlm is not None and time.time() - t_start < _L2_VLM_BUDGET_S:
                 try:
                     side, evasion = _l2_vlm_side_evasion(vlm, device, paths, c)
                 except Exception:
