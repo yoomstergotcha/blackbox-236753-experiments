@@ -255,10 +255,15 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - 의도적 차종 이동 검증: v13(RAV4만)은 학습에 없던 Civic route에서 accel 붕괴(0.70→0.31~0.38). 전차종 3-seed는 held-out RAV4 0.723 / Civic 0.426으로 두 route 모두 v13보다 나음 → 채택. 영상별 흐름 정규화·모션 전용은 한쪽 route에서 붕괴해 기각.
 - `submit_v28.zip`(4472MB, 559조각, MD5 `72f85df29fcaf376d3ba5847afb8327c`): S1 VLM, S2 v27과 동일, S3만 교체 → S3 열 델타로 판정.
 
-### 내일(2026-09-27) 권장 제출 순서
-1. **v27** (검증 요소 결합: S1 VLM 0.974 + S2 v26 collision·entry −21·VLM side/eva + S3 v13) — 기대 총점 ≥0.53
-2. **v28** (v27 + S3 전차종 앙상블) — S3 열 델타
-3. 남는 슬롯: v24(적응 stride 5모델, entry 7·s) — v26과 비교해 stride 선택이 비공개에서 발동하는지 판독
+### 제출 29·30 (경량 Stage2 후보, 2026-09-26 저녁)
+- Stage2 병목 분해: collision·entry 적중 ~0.25/~0.16. 검출기(YOLOv8) 기반 접촉/진입/방향은 CCD에서 전부 열세(EXP-S2-DET-001), 카메라 스케일 이동엔 이미 강건(EXP-S2-SHIFT-002), fps 추정(자기상관)은 불가.
+- 남은 가설 = 비공개 시간 척도 3배(v23 entry −21 +0.038): stride 선택이 실데이터에서 잘 안 켜지는 문제 → **v29** = 순수 최대 규칙(ratio 1.0) + entry −21, **v30** = stride 3 고정(90프레임 미만 클립은 1) + entry −21. 둘 다 S1 v4·S3 v13인 255MB 경량 빌드(S2 열만 판독).
+- `submit_v29.zip` MD5 `3e144a4f22bd44e717d797158b7722ab`, `submit_v30.zip` MD5 `c0b106a1d48e31e62956e75d096f2650` (릴리스 submissions-2026-09-25).
+
+### 권장 제출 순서 (2026-09-27)
+1. **v27** (S1 VLM + S2 v26·entry −21·VLM side/eva + S3 v13) — 기대 총점 ≥0.53
+2. **v30** (S2 stride 3 고정) — S2 열이 0.30을 넘으면 시간 척도 가설 확정 → 최종 빌드에 반영
+3. **v28** (S3 전차종) 또는 **v29** (순수 최대 규칙) — v30 결과에 따라
 
 ### 그 다음 (예정)
 - LB로 v7(S1)·v8(S2) 확인 후 채택분을 합친 v9. Stage2: 사고 시점/진입 방향 라벨이 있는 외부 데이터셋 라이선스 조사 재개(DoTA/CCD/DAD/Nexar). Stage3: 1D temporal conv, backbone 부분 unfreeze.
