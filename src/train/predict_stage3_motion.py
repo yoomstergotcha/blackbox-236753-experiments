@@ -23,7 +23,8 @@ _MOTION_W, _MOTION_H = 160, 120
 _MOTION_DIM = 13
 _LOGRATIO_IDX = [0, 3, 9, 10]  # mag_mean, div, mag_bottom, mag_top
 _DIFF_IDX = [11]  # static_frac
-_SMOOTH_FRAMES = 31  # 영상 내 logit 이동평균 폭(프레임). 라벨 구간이 수 초 단위라 프레임별 flicker 제거 (EXP-S3-SMOOTH-001)
+_SMOOTH_FRAMES = 61  # EXP-S3-SMOOTH-001: 중앙값 필터 61프레임(held-out RAV4/Civic 모두 +0.006~+0.013)
+_STEER_BIAS = (1.25, 0.0, 0.5)  # (LEFT, STRAIGHT, RIGHT) logit 편향 — EXP-S3-STEERBIAS-001: STRAIGHT 과예측 보정, held-out 두 route 조향 F1 +0.05~+0.09 (고정 상수, 파일 간 통계 없음)  # 영상 내 logit 이동평균 폭(프레임). 라벨 구간이 수 초 단위라 프레임별 flicker 제거 (EXP-S3-SMOOTH-001)
 _IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
 _IMAGENET_STD = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
 
@@ -134,13 +135,18 @@ def _motion_clip_features(m: np.ndarray, frame_idx: np.ndarray, horizons) -> np.
 
 
 def _smooth_logits(logits: np.ndarray, w: int = _SMOOTH_FRAMES) -> np.ndarray:
-    """(N, C) logit을 프레임 축으로 폭 w 중심 이동평균(가장자리는 edge pad). 한 영상 안에서만 — 파일 간 통계 없음."""
-    if w <= 1 or len(logits) < 2:
+    """영상 내 시간축 중앙값 필터(창 w, 경계는 가장자리 복제). w<=1이면 그대로."""
+    if w <= 1 or len(logits) == 0:
         return logits
-    pad = w // 2
-    lp = np.pad(logits, ((pad, pad), (0, 0)), mode="edge")
-    k = np.ones(w, dtype=np.float64) / w
-    return np.stack([np.convolve(lp[:, j], k, mode="valid") for j in range(logits.shape[1])], 1)
+    try:
+        from scipy.ndimage import median_filter
+
+        return median_filter(logits, size=(w, 1), mode="nearest")
+    except Exception:  # scipy 없을 때 numpy 폴백
+        pad = w // 2
+        lp = np.pad(logits, ((pad, w - 1 - pad), (0, 0)), mode="edge")
+        win = np.lib.stride_tricks.sliding_window_view(lp, w, axis=0)
+        return np.median(win, axis=-1)
 
 
 def _clip_features(feats: np.ndarray, frame_idx: np.ndarray) -> np.ndarray:
@@ -223,7 +229,7 @@ def predict_stage3(data_dir, model_dir):
                 ws_sum += w_s
             la_sum, ls_sum = la_sum / max(wa_sum, 1e-6), ls_sum / max(ws_sum, 1e-6)
             accel_idx = _smooth_logits(la_sum).argmax(1).tolist()
-            steer_idx = _smooth_logits(ls_sum).argmax(1).tolist()
+            steer_idx = (_smooth_logits(ls_sum) + np.asarray(_STEER_BIAS, dtype=np.float32)).argmax(1).tolist()
             for sample_index, a, s in zip(frame_idx.tolist(), accel_idx, steer_idx):
                 rows.append({"ID": path.stem, "sample_index": sample_index, "accel_label": _ACCEL_LABELS[a], "steer_label": _STEER_LABELS[s]})
     del members, backbone_owner
