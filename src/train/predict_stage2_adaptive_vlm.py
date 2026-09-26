@@ -21,7 +21,7 @@ import torch
 from torch import nn
 
 _L2_W, _L2_H = 320, 180
-_L2_ENTRY_OFFSET = 7
+_L2_ENTRY_OFFSET = 21  # LB 실측: entry −21(v23 S2 0.2809) > −7(v20 0.2426). stride와 무관하게 고정
 _L2_TAIL_EXCLUDE = 3
 _L2_STRIDES = (1, 2, 3)  # CCD 검증 범위; 4·6은 허위 최대값 위험
 _L2_MIN_FRAMES = 16
@@ -254,7 +254,7 @@ def predict_stage2(data_dir, model_dir):
                     side, evasion = _l2_vlm_side_evasion(vlm, device, paths, c, s)
                 except Exception:
                     pass
-            e = max(c - _L2_ENTRY_OFFSET * s, 0)
+            e = max(c - _L2_ENTRY_OFFSET, 0)
             rows.append({"ID": folder.name, "collision_frame": int(numbers[c]), "entry_frame": int(numbers[e]), "evasion_space": int(evasion), "entry_side": side})
     del folds, vlm
     torch.cuda.empty_cache()
