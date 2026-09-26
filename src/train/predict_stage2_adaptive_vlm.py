@@ -1,6 +1,7 @@
-"""공식 inference.py에 붙여넣을 Stage2 predict 함수 — 프레임률 적응 학습 localizer (EXP-S2-FPS-001) + VLM 진입방향/회피공간 (EXP-S2-VLM-001).
+"""공식 inference.py에 붙여넣을 Stage2 predict 함수 — 프레임률 적응 학습 localizer (EXP-S2-FPS-001/INV-001) + VLM 진입방향/회피공간 (EXP-S2-VLM-001).
 
 model/stage2/qwen2vl/ (Qwen2-VL-2B-Instruct, Apache-2.0)가 있으면 진입방향·회피공간을 zero-shot log-prob 비교(고정 임계)로 판정, 없거나 실패하면 규칙 폴백.
+entry = collision − 21 고정(LB 실측 v23: −21이 −7보다 +0.038).
 
 비공개 클립의 프레임률·길이는 알 수 없다(공개 예시 50프레임/10fps와 다름이 LB로 확인). stride s∈{1,2,3,4,6}로 프레임을 솎아
 10fps 학습 분포에 맞춘 뒤, 앙상블 점수의 최대값이 가장 큰 stride를 **클립마다** 고른다(파일 간 통계 없음, 고정 상수만 사용).
@@ -8,7 +9,8 @@ CCD 200클립 검증(±0.3s): 원본 10fps 0.765(고정 stride1 0.79), ×3 보�
   collision = 선택 stride에서 argmax(마지막 3프레임 제외) × s → 원본 프레임 번호
   entry     = collision − 7·s (10fps 기준 0.7s; CCD 수동 라벨 중앙값)
   side/evasion = 현행 영상 내부 규칙(창 폭을 s배)
-model/stage2/*fold*.pt (19-d no-app BiGRU localizer, EXP-S2-LEARN-001~005)만 사용 — ResNet 불필요.
+model/stage2/*fold*.pt (19-d BiGRU: LEARN-001~005 + 위치 무작위화 GRU/국소 CNN: INV-002, 총 11모델×5fold)만 사용 — ResNet 불필요.
+4가지 의도적 분포 이동(10/30fps × 짧은/긴 클립) 최저 적중 0.75 (v24의 5모델 0.715).
 """
 import re
 import time
@@ -21,7 +23,7 @@ import torch
 from torch import nn
 
 _L2_W, _L2_H = 320, 180
-_L2_ENTRY_OFFSET = 21  # LB 실측: entry −21(v23 S2 0.2809) > −7(v20 0.2426). stride와 무관하게 고정
+_L2_ENTRY_OFFSET = 21
 _L2_TAIL_EXCLUDE = 3
 _L2_STRIDES = (1, 2, 3)  # CCD 검증 범위; 4·6은 허위 최대값 위험
 _L2_MIN_FRAMES = 16
@@ -49,6 +51,30 @@ class _L2Localizer(nn.Module):
     def forward(self, x):
         h, _ = self.gru(self.proj((x - self.in_mean) / self.in_std))
         return self.head(h).squeeze(-1)
+
+
+class _L2LocalCNN(nn.Module):
+    """수용영역 ±30프레임 dilated 1D CNN (EXP-S2-INV-002, 위치 사전정보 없음)."""
+
+    def __init__(self, in_dim: int, hidden: int = 64, dropout: float = 0.2, dilations=(1, 2, 4, 8)):
+        super().__init__()
+        self.register_buffer("in_mean", torch.zeros(in_dim))
+        self.register_buffer("in_std", torch.ones(in_dim))
+        layers = [nn.Conv1d(in_dim, hidden, 1)]
+        for d in dilations:
+            layers += [nn.GELU(), nn.Dropout(dropout), nn.Conv1d(hidden, hidden, 5, padding=2 * d, dilation=d)]
+        self.body = nn.Sequential(*layers)
+        self.head = nn.Conv1d(hidden, 1, 1)
+
+    def forward(self, x):
+        h = self.body(((x - self.in_mean) / self.in_std).transpose(1, 2))
+        return self.head(nn.functional.gelu(h)).squeeze(1)
+
+
+def _l2_build(cfg):
+    if cfg.get("arch") == "cnn" or "dilations" in cfg:
+        return _L2LocalCNN(cfg["in_dim"], cfg["hidden"], cfg["dropout"], tuple(cfg["dilations"]))
+    return _L2Localizer(cfg["in_dim"], cfg["hidden"], cfg["dropout"])
 
 
 def _l2_frame_number(path: Path) -> int:
@@ -226,7 +252,7 @@ def predict_stage2(data_dir, model_dir):
     folds = []
     for pth in sorted(Path(model_dir).glob("*fold*.pt")):
         ck = torch.load(pth, map_location="cpu", weights_only=False)
-        m = _L2Localizer(ck["config"]["in_dim"], ck["config"]["hidden"], ck["config"]["dropout"])
+        m = _l2_build(ck["config"])
         m.load_state_dict(ck["model"])
         folds.append(m.to(device).eval())
     try:

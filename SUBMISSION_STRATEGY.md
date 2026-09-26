@@ -249,7 +249,7 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - 남은 최대 레버 = Stage3(0.54 vs 상위 0.76, 가중치 0.4): v15/v18(bias) 결과 대기 후 라벨 임계/클래스 사전분포 쪽으로.
 
 ### 제출 27: 검증된 요소 결합 — **빌드/업로드 중** (2026-09-26)
-- S1 VLM(thr −0.5) + S2 [v26 collision + entry −21 고정 + VLM side/evasion + 1500s 시간 가드] + S3 v13. 4.45GB.
+- S1 VLM(thr −0.5) + S2 [v26 collision + entry −21 고정 + VLM side/evasion + 1500s 시간 가드] + S3 v13. `submit_v27.zip`(4472MB, 559조각, MD5 `7192ec6d6ec52affa1840274ad457f93`, 릴리스 submissions-2026-09-25).
 
 ### 그 다음 (예정)
 - LB로 v7(S1)·v8(S2) 확인 후 채택분을 합친 v9. Stage2: 사고 시점/진입 방향 라벨이 있는 외부 데이터셋 라이선스 조사 재개(DoTA/CCD/DAD/Nexar). Stage3: 1D temporal conv, backbone 부분 unfreeze.
