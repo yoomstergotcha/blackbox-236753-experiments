@@ -61,6 +61,24 @@ def clip_features(feats: np.ndarray, frame_idx: np.ndarray, n_frames: int = CLIP
     return out
 
 
+VIDEO_NORM = False  # --video-norm: 영상별 흐름 스케일(median mag_mean) 정규화 (EXP-S3-INV-001)
+
+
+def video_norm_motion(m: np.ndarray) -> np.ndarray:
+    """(N, S, K) 또는 (N, K): stride별로 mag_mean(0열)의 중앙값으로 static_frac(11열) 제외 전 열을 나눈다 → 카메라/차종/fps 스케일 불변."""
+    m = m.astype(np.float32).copy()
+    if m.ndim == 2:
+        m = m[:, None, :]
+        squeeze = True
+    else:
+        squeeze = False
+    for s in range(m.shape[1]):
+        scale = float(np.median(m[:, s, 0])) + 1e-3
+        cols = [c for c in range(m.shape[2]) if c != 11]
+        m[:, s, cols] = m[:, s, cols] / scale
+    return m[:, 0, :] if squeeze else m
+
+
 def build_xy(labels: pd.DataFrame, feat_dir: Path, temporal: bool = False, motion_dir: Path | None = None, sim10: bool = False, horizons: tuple[int, ...] = ()) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """sim10=True: 20fps 캐시에서 짝수 프레임만 취하고(frame_index//2) motion은 stride-2 채널을 써서
     비공개 10fps 영상을 시뮬레이션(EXP-S3-MOTION-001 --fps-aug). motion_dir가 있으면 3K-d motion 특징을 뒤에 concat."""
@@ -73,6 +91,8 @@ def build_xy(labels: pd.DataFrame, feat_dir: Path, temporal: bool = False, motio
         m = None
         if motion_dir is not None:
             m = np.load(motion_dir / name)  # (N, 2, K)
+            if VIDEO_NORM:
+                m = video_norm_motion(m)
             assert len(m) == len(f), f"{sid}: motion {len(m)} vs feats {len(f)} 프레임 수 불일치"
             m = m[::2, 1, :] if sim10 else m[:, 0, :]
         if sim10:
@@ -108,6 +128,7 @@ def main() -> None:
     parser.add_argument("--motion", type=Path, default=None, help="stage3_motion.py 캐시 디렉터리 - optical-flow ego-motion 특징 concat (EXP-S3-MOTION-001)")
     parser.add_argument("--fps-aug", action="store_true", help="10fps 시뮬레이션(짝수 프레임+stride-2 motion) 샘플을 학습에 추가, val은 20fps/10fps 둘 다 보고")
     parser.add_argument("--no-appearance", action="store_true", help="motion 특징만 사용(ablation)")
+    parser.add_argument("--video-norm", action="store_true", help="영상별 흐름 스케일 정규화(EXP-S3-INV-001)")
     parser.add_argument("--holdout-route", default="", help="쉼표 구분 route id — train/val 모두에서 제외(공개 OPEN 원본 route 등)")
     parser.add_argument("--motion-horizons", default="16,32,64,128", help="다중 지평 log-ratio 특징의 H(프레임) 목록, '0'이면 없음")
     args = parser.parse_args()
@@ -118,6 +139,8 @@ def main() -> None:
     labels = pd.read_csv(args.labels)
     horizons = tuple(int(h) for h in args.motion_horizons.split(",") if int(h) > 0) if args.motion is not None else ()
     segs = sorted(labels["segment_id"].unique())
+    global VIDEO_NORM
+    VIDEO_NORM = bool(args.video_norm)
     holdout = {r for r in args.holdout_route.split(",") if r}
     if holdout:
         before = len(segs)
@@ -211,7 +234,7 @@ def main() -> None:
             torch.save(full.state_dict(), args.out / "best.pt")
 
     with open(args.out / "history.json", "w", encoding="utf-8") as f:
-        json.dump({"history": history, "best_epoch": best_epoch, "best_select_score": best, "best_epoch_record": history[best_epoch] if best_epoch >= 0 else None, "train_segments": len(train_segs), "val_segments": len(val_segs), "temporal": args.temporal, "class_weight": args.class_weight, "motion": str(args.motion) if args.motion else None, "fps_aug": args.fps_aug, "no_appearance": args.no_appearance, "motion_horizons": list(horizons)}, f, ensure_ascii=False, indent=2)
+        json.dump({"history": history, "best_epoch": best_epoch, "best_select_score": best, "best_epoch_record": history[best_epoch] if best_epoch >= 0 else None, "train_segments": len(train_segs), "val_segments": len(val_segs), "temporal": args.temporal, "class_weight": args.class_weight, "motion": str(args.motion) if args.motion else None, "fps_aug": args.fps_aug, "no_appearance": args.no_appearance, "video_norm": bool(args.video_norm), "motion_horizons": list(horizons)}, f, ensure_ascii=False, indent=2)
     print(f"best select_score={best:.4f} (epoch {best_epoch}) -> {args.out / 'best.pt'}")
     if best_epoch >= 0:
         print("best epoch record:", history[best_epoch])
