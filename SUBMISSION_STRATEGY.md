@@ -258,7 +258,7 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 ### 제출 29·30 (경량 Stage2 후보, 2026-09-26 저녁)
 - Stage2 병목 분해: collision·entry 적중 ~0.25/~0.16. 검출기(YOLOv8) 기반 접촉/진입/방향은 CCD에서 전부 열세(EXP-S2-DET-001), 카메라 스케일 이동엔 이미 강건(EXP-S2-SHIFT-002), fps 추정(자기상관)은 불가.
 - 남은 가설 = 비공개 시간 척도 3배(v23 entry −21 +0.038): stride 선택이 실데이터에서 잘 안 켜지는 문제 → **v29** = 순수 최대 규칙(ratio 1.0) + entry −21, **v30** = stride 3 고정(90프레임 미만 클립은 1) + entry −21. 둘 다 S1 v4·S3 v13인 255MB 경량 빌드(S2 열만 판독).
-- `submit_v29.zip` MD5 `3e144a4f22bd44e717d797158b7722ab`, `submit_v30.zip` MD5 `c0b106a1d48e31e62956e75d096f2650` (릴리스 submissions-2026-09-25).
+- `submit_v29.zip` MD5 `3e144a4f22bd44e717d797158b7722ab`, `submit_v30.zip` MD5 `c0b106a1d48e31e62956e75d096f2650` — **릴리스 `submissions-2026-09-27`** (두 번째 릴리스도 1,000개 한도 도달; v25 조각을 삭제해 v27만 두 번째 릴리스에서 마무리, v28~는 세 번째 릴리스).
 
 ### 권장 제출 순서 (2026-09-27)
 1. **v27** (S1 VLM + S2 v26·entry −21·VLM side/eva + S3 v13) — 기대 총점 ≥0.53
