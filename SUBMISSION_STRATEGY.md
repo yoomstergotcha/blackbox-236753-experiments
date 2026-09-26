@@ -251,6 +251,10 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 ### 제출 27: 검증된 요소 결합 — **빌드/업로드 중** (2026-09-26)
 - S1 VLM(thr −0.5) + S2 [v26 collision + entry −21 고정 + VLM side/evasion + 1500s 시간 가드] + S3 v13. `submit_v27.zip`(4472MB, 559조각, MD5 `7192ec6d6ec52affa1840274ad457f93`, 릴리스 submissions-2026-09-25).
 
+### 제출 28: Stage3 전차종 앙상블 (EXP-S3-ALLCARS-001) — **빌드 완료, v27 뒤 자동 업로드** (2026-09-26)
+- 의도적 차종 이동 검증: v13(RAV4만)은 학습에 없던 Civic route에서 accel 붕괴(0.70→0.31~0.38). 전차종 3-seed는 held-out RAV4 0.723 / Civic 0.426으로 두 route 모두 v13보다 나음 → 채택. 영상별 흐름 정규화·모션 전용은 한쪽 route에서 붕괴해 기각.
+- `submit_v28.zip`(4472MB, 559조각, MD5 `72f85df29fcaf376d3ba5847afb8327c`): S1 VLM, S2 v27과 동일, S3만 교체 → S3 열 델타로 판정.
+
 ### 그 다음 (예정)
 - LB로 v7(S1)·v8(S2) 확인 후 채택분을 합친 v9. Stage2: 사고 시점/진입 방향 라벨이 있는 외부 데이터셋 라이선스 조사 재개(DoTA/CCD/DAD/Nexar). Stage3: 1D temporal conv, backbone 부분 unfreeze.
 - Stage1: 보류(v4 0.4237). 재개 조건: 비공개 재녹화 외형에 대한 새 가설(예: 코덱/해상도/fps 재인코딩, 프레임 중복·깜빡임 등 시간축 흔적)이 생겼을 때 1슬롯 프로브.

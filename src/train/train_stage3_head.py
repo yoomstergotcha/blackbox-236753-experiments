@@ -61,6 +61,7 @@ def clip_features(feats: np.ndarray, frame_idx: np.ndarray, n_frames: int = CLIP
     return out
 
 
+STEER_NORM = False  # --steer-norm: 영상별 수평 흐름(u_mean/u_left/u_right)을 u_mean의 표준편차로 나눔 (조향 스케일 불변)
 VIDEO_NORM = False  # --video-norm: 영상별 흐름 스케일(median mag_mean) 정규화 (EXP-S3-INV-001)
 
 
@@ -79,6 +80,14 @@ def video_norm_motion(m: np.ndarray) -> np.ndarray:
     return m[:, 0, :] if squeeze else m
 
 
+def steer_norm_motion(m: np.ndarray) -> np.ndarray:
+    m = m.astype(np.float32).copy()
+    for s in range(m.shape[1]):
+        scale = float(np.std(m[:, s, 1])) + 1e-3
+        m[:, s, [1, 5, 6]] = m[:, s, [1, 5, 6]] / scale
+    return m
+
+
 def build_xy(labels: pd.DataFrame, feat_dir: Path, temporal: bool = False, motion_dir: Path | None = None, sim10: bool = False, horizons: tuple[int, ...] = ()) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """sim10=True: 20fps 캐시에서 짝수 프레임만 취하고(frame_index//2) motion은 stride-2 채널을 써서
     비공개 10fps 영상을 시뮬레이션(EXP-S3-MOTION-001 --fps-aug). motion_dir가 있으면 3K-d motion 특징을 뒤에 concat."""
@@ -93,6 +102,8 @@ def build_xy(labels: pd.DataFrame, feat_dir: Path, temporal: bool = False, motio
             m = np.load(motion_dir / name)  # (N, 2, K)
             if VIDEO_NORM:
                 m = video_norm_motion(m)
+            if STEER_NORM:
+                m = steer_norm_motion(m)
             assert len(m) == len(f), f"{sid}: motion {len(m)} vs feats {len(f)} 프레임 수 불일치"
             m = m[::2, 1, :] if sim10 else m[:, 0, :]
         if sim10:
@@ -129,6 +140,7 @@ def main() -> None:
     parser.add_argument("--fps-aug", action="store_true", help="10fps 시뮬레이션(짝수 프레임+stride-2 motion) 샘플을 학습에 추가, val은 20fps/10fps 둘 다 보고")
     parser.add_argument("--no-appearance", action="store_true", help="motion 특징만 사용(ablation)")
     parser.add_argument("--video-norm", action="store_true", help="영상별 흐름 스케일 정규화(EXP-S3-INV-001)")
+    parser.add_argument("--steer-norm", action="store_true", help="영상별 수평 흐름 스케일 정규화(EXP-S3-INV-002)")
     parser.add_argument("--holdout-route", default="", help="쉼표 구분 route id — train/val 모두에서 제외(공개 OPEN 원본 route 등)")
     parser.add_argument("--motion-horizons", default="16,32,64,128", help="다중 지평 log-ratio 특징의 H(프레임) 목록, '0'이면 없음")
     args = parser.parse_args()
@@ -139,8 +151,9 @@ def main() -> None:
     labels = pd.read_csv(args.labels)
     horizons = tuple(int(h) for h in args.motion_horizons.split(",") if int(h) > 0) if args.motion is not None else ()
     segs = sorted(labels["segment_id"].unique())
-    global VIDEO_NORM
+    global VIDEO_NORM, STEER_NORM
     VIDEO_NORM = bool(args.video_norm)
+    STEER_NORM = bool(args.steer_norm)
     holdout = {r for r in args.holdout_route.split(",") if r}
     if holdout:
         before = len(segs)
