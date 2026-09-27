@@ -287,7 +287,7 @@ Stage3 델타(3.45배)가 로컬 예측(2.9배)과 일치 → 로컬 official-la
 - **top-k 진단**(사용자 지시): 배포 11모델 진짜 OOF 0.788, 오라클 top-2 0.881 / top-3 0.941 — 오답 169건의 72%가 top-3 안. 그러나 후보 재순위기(curve/phys/app/det listwise MLP)는 최대 0.790: 후보를 가르는 정보가 현재 특징에 없음 → 기각.
 - **라벨/도메인 불일치 탐색**(사용자 지시): 공식 공개 Stage2 5개 = CCD 000001~5이고 t_collision = CCD onset과 완전 일치(라벨 규약 = CCD '사고 시작 프레임'). talkboard 417202는 000002를 '블랙박스 차량 비관여 원거리 사고'로 지적. 배포 앙상블(ego 전용 학습)은 CCD non-ego 699클립에서 **0.282**(ego 0.788) — S2 산식 역산 LB collision 적중(≈0.27~0.33)과 같은 크기.
 - **ego+non-ego 통합 학습**: 19-d 물리 특징 BiGRU 3-seed → ego 0.751 / non-ego 0.466; 배포 11과 그룹 가중 혼합 w=0.5 → **ego 0.793 / non-ego 0.421**(배포 0.788 / 0.282). 이동 검증(배포 규칙, OOF): ego 30fps 짧은/긴 0.78/0.71(배포 0.76/0.705), non-ego 0.50/0.41(배포 0.28/0.26). +app 기각(0.687/0.339), +det 미세(0.770/0.432, 검출기 비용).
-- `submit_v37.zip` = v34 + Stage2 collision 혼합(`src/train/predict_stage2_fixed3_vlm_mix.py`, `_L2_NEW_WEIGHT=0.5`, ckpt 70개 `output/s2_ens_v37/`, 새 모델은 `n*` 접두). 꼬리 3·entry −21·VLM side/eva·S3 v34 그대로. 릴리스 **submissions-2026-09-28d**(MD5는 업로드 로그 `output/parts_v37/upload.log`/MD5SUMS.txt).
+- `submit_v37.zip` = v34 + Stage2 collision 혼합(`src/train/predict_stage2_fixed3_vlm_mix.py`, `_L2_NEW_WEIGHT=0.5`, ckpt 70개 `output/s2_ens_v37/`, 새 모델은 `n*` 접두). 꼬리 3·entry −21·VLM side/eva·S3 v34 그대로. `submit_v37.zip` 4705MB, **561조각**, MD5 `7138426f1b8882655ee4a9adc7fd77c5`, 릴리스 **submissions-2026-09-28d**(MD5SUMS.txt 포함). 스모크: 공개 5개 collision 32/33/31/40/30(라벨 32/30/31/41/30 → 5/5, v34는 3/5).
 - 기대: 비공개가 공개 샘플과 같은 규약(관찰자형 사고 포함)이면 collision 적중 +0.07(53/47 혼합 가정, 30fps 긴 클립) → S2 +0.05 안팎. 관찰자형이 없으면 ego 유지(±0.01).
 
 ### 마감일(2026-09-29) 결정 트리 — v37 반영

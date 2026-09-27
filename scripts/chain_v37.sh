@@ -2,7 +2,7 @@
 # v37 빌드 완료 대기 → 8MB 조각 분할 → 릴리스 submissions-2026-09-28d 생성 → 단일 워커 업로드(재개 가능)
 cd /c/projects/BLACKBOX_LB || exit 1
 GH=.tools/bin/gh.exe; REPO=yoomstergotcha/blackbox-236753-experiments; REL=submissions-2026-09-28d
-until grep -q "생성 완료" output/build_v37.log 2>/dev/null && [ -f submit_v37.zip ]; do sleep 60; done
+[ -f submit_v37.zip ] || exit 1
 sleep 30
 MD5=$(md5sum submit_v37.zip | cut -c1-32); echo "md5 $MD5"
 mkdir -p output/parts_v37; rm -f output/parts_v37/submit_v37.zip.part*
