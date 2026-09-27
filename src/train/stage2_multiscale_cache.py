@@ -74,11 +74,12 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=Path("output/stage2_ms_cache"))
     ap.add_argument("--per-fold", type=int, default=40)
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--nonego", action="store_true", help="non-ego(관찰자 시점) 클립만 선택")
     args = ap.parse_args()
     from src.train.train_stage2_collision import load_ann
 
     ann = load_ann(Path("data/external/ccd/Crash-1500.txt"))
-    ann = ann[ann.ego & (ann.onset >= 0)]
+    ann = ann[((~ann.ego) if args.nonego else ann.ego) & (ann.onset >= 0)]
     public = {"000001", "000002", "000003", "000004", "000005"}
     pool = ann[~ann.vid.isin(public)].reset_index(drop=True)
     rng = np.random.default_rng(20260825)

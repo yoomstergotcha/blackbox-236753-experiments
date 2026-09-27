@@ -139,6 +139,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=20260825)
     ap.add_argument("--split-seed", type=int, default=20260825, help="fold 분할 시드(시드 앙상블 OOF 비교를 위해 고정)")
     ap.add_argument("--extra", nargs="*", default=[], help="npz에서 추가로 이어붙일 키(예: grid)")
+    ap.add_argument("--include-nonego", action="store_true", help="CCD non-ego(관찰자 시점) 충돌 클립도 학습/OOF에 포함")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     torch.manual_seed(args.seed)
@@ -147,7 +148,7 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     ann = load_ann(args.ann)
-    ann = ann[ann.ego & (ann.onset >= 0)]
+    ann = ann[(ann.ego | args.include_nonego) & (ann.onset >= 0)]
     ann = ann[[(args.feats / f"{v}.npz").is_file() for v in ann.vid]]
     public = {"000001", "000002", "000003", "000004", "000005"}
     data = {v: (load_feats(args.feats, v, not args.no_app, tuple(args.extra)), int(o)) for v, o in zip(ann.vid, ann.onset)}
@@ -201,6 +202,7 @@ def main() -> None:
         torch.save({"model": best_state, "config": {**model.cfg, "extra": list(args.extra), "no_app": bool(args.no_app)}}, args.out / f"fold{k}.pt")
         print(f"fold {k}: val hit(±3) {h:.3f} (n={len(va)})", flush=True)
     err = np.array([oof[v] - data[v][1] for v in train_pool.vid])
+    json.dump({v: [int(oof[v]), int(data[v][1]), bool(e)] for v, e in zip(train_pool.vid, train_pool.ego)}, open(args.out / "oof_preds.json", "w"))
     print(f"OOF hit(±3) = {np.mean(np.abs(err) <= 3):.3f} | mean fold {np.mean(fold_hits):.3f} | err percentiles 5/25/50/75/95: {np.percentile(err, [5, 25, 50, 75, 95]).astype(int).tolist()}")
     pub = [(v, data[v]) for v in sorted(public) if v in data]
     if pub:
