@@ -89,6 +89,7 @@ def main() -> None:
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--seed", type=int, default=20260825)
     ap.add_argument("--split-seed", type=int, default=20260825)
+    ap.add_argument("--include-nonego", action="store_true", help="CCD non-ego(관찰자 시점) 충돌 클립도 학습/OOF에 포함")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     torch.manual_seed(args.seed)
@@ -97,7 +98,7 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     ann = load_ann(args.ann)
-    ann = ann[ann.ego & (ann.onset >= 0)]
+    ann = ann[(ann.ego | args.include_nonego) & (ann.onset >= 0)]
     ann = ann[[(args.feats / f"{v}.npz").is_file() for v in ann.vid]]
     public = {"000001", "000002", "000003", "000004", "000005"}
     data = {v: (load_feats(args.feats, v, False), int(o)) for v, o in zip(ann.vid, ann.onset)}
