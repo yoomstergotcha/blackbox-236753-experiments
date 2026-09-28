@@ -12,7 +12,7 @@ _ann = load_ann(Path("data/external/ccd/Crash-1500.txt")); onset = {v: int(o) fo
 
 M1, S1, M2, S2 = -1.1012, 0.1585, 0.0337, 0.1171; EVA_THR, SIDE_THR = -1.23, 1.375
 
-lab = pd.concat([pd.read_csv("output/ccd_manual_labels_all.csv", dtype={"vid": str})] + [pd.read_csv(f, dtype={"vid": str}) for f in sorted(glob.glob("output/ccd_manual_labels_v3_part*.csv"))], ignore_index=True)
+lab = pd.concat([pd.read_csv("output/ccd_manual_labels_all.csv", dtype={"vid": str})] + [pd.read_csv(f, dtype={"vid": str}) for f in sorted(glob.glob("output/ccd_manual_labels_v*_part*.csv"))], ignore_index=True)
 lab = lab.drop_duplicates("vid", keep="first"); lab = lab[lab.vid.isin(onset)]
 sc = pd.read_csv("output/s2_vlm_scores_all.csv", dtype={"vid": str}).drop_duplicates("vid").set_index("vid")
 lab = lab[lab.vid.isin(sc.index)].reset_index(drop=True); print("labeled clips with VLM scores:", len(lab), "| side", lab.manual_side.notna().sum(), "| evasion", lab.manual_evasion.notna().sum())

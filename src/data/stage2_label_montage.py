@@ -15,7 +15,9 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--n", type=int, default=200); ap.add_argument("--out", type=Path, default=Path("output/ccd_label_montages_v3")); ap.add_argument("--seed", type=int, default=7); a = ap.parse_args()
     ann = load_ann(Path("data/external/ccd/Crash-1500.txt")); ann = ann[ann.ego & (ann.onset >= 0)]
     public = {"000001", "000002", "000003", "000004", "000005"}
-    lab = pd.read_csv("output/ccd_manual_labels_all.csv", dtype={"vid": str}); labeled = set(lab.vid[lab.manual_side.notna() | lab.manual_evasion.notna()])
+    import glob
+    lab = pd.concat([pd.read_csv(f, dtype={"vid": str}) for f in ["output/ccd_manual_labels_all.csv"] + sorted(glob.glob("output/ccd_manual_labels_v*_part*.csv"))], ignore_index=True)
+    labeled = set(lab.vid[lab.manual_side.notna() | lab.manual_evasion.notna()])
     pool = ann[~ann.vid.isin(public | labeled)].reset_index(drop=True)
     pool = pool[(pool.onset >= 12) & (pool.onset <= 46)]
     pick = pool.sample(n=min(a.n, len(pool)), random_state=a.seed).reset_index(drop=True)
