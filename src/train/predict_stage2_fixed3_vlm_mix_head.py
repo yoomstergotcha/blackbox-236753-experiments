@@ -34,7 +34,7 @@ _L2_VLM_BUDGET_S = 1500  # Stage2 시작 후 이 시간(초)을 넘기면 남은
 _L2_VLM_DIR = "qwen2vl"
 _L2_VLM_NF, _L2_VLM_W, _L2_VLM_SPAN = 8, 448, 14
 _L2_VLM_SIDE_THR = 1.375  # 수동 라벨 53클립 점수 중앙값(LOO acc 0.66); 모델이 LEFT로 치우쳐 0이 아닌 고정 상수 사용
-_L2_EVA_M1, _L2_EVA_S1, _L2_EVA_M2, _L2_EVA_S2, _L2_EVA_THR = -1.1012, 0.1585, 0.0337, 0.1171, -1.23  # 63클립 z-정규화 상수·임계(LOO macroF1 0.77)
+_L2_EVA_M1, _L2_EVA_S1, _L2_EVA_M2, _L2_EVA_S2, _L2_EVA_THR = -1.1012, 0.1585, 0.0337, 0.1171, -0.5  # z-정규화 상수(63클립) / 임계 −0.5는 라벨 563클립 재보정(macroF1 0.577→0.619, pred1 0.57 vs 라벨 0.59)
 _L2_Q_SIDE = "This is a dashcam video from the ego car, ending at the moment it collides with another vehicle. From which side of the screen did that other vehicle come into the ego car's path? Answer with exactly one word: LEFT or RIGHT."
 _L2_Q_EVA_IMG = "This dashcam image shows the moment the camera car collides with another vehicle. Is there an open lane or free road space right next to the camera car where it could have steered to avoid the crash? Answer with exactly one word: YES or NO."
 _L2_Q_EVA_VID = "This is a dashcam video ending at a collision. Just before the collision, was there empty road space to the left or right of the camera car (no other vehicle, wall, barrier or curb blocking it)? Answer with exactly one word: YES or NO."
@@ -233,7 +233,7 @@ def _l2_rule_from_logits(side_score, eva_img, eva_vid):
 _L2_LR = None  # EXP-S2-SIDEEVA-001: 수동 라벨(CCD, 253클립) 로지스틱 회귀 상수; None이면 임계 규칙
 _L2_YOLO_FILE = "yolov8s.pt"  # Ultralytics YOLOv8s (AGPL-3.0), 트랙 cue용
 _L2_TRACK_COLS = {"lat", "has", "occ", "nb", "area"}
-_L2_SIDE_TRACK_GATE = 0.06  # 횡위치 |x−0.5|가 이보다 작으면 VLM으로 폴백
+_L2_SIDE_TRACK_GATE = 0.1  # 횡위치 |x−0.5|가 이보다 작으면 VLM으로 폴백 (라벨 431: 게이트 0.06 0.629 / 0.1 0.639)
 
 
 def _l2_yolo_load(model_dir):
